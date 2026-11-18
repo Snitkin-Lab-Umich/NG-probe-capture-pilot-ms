@@ -71,3 +71,5 @@ dhatri_qc_pipeline_results/
 
 # Slurm output
 slurm_out/
+ 
+._*
