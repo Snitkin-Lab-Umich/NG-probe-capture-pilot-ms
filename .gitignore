@@ -65,3 +65,9 @@ scripts/figures/deprecated
 # Data
 data/
 dhatri_qc_pipeline_results/
+
+# Weird missing data
+._scripts
+
+# Slurm output
+slurm_out/
