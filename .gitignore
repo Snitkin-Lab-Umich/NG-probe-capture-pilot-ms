@@ -53,3 +53,15 @@ rsconnect/
 src/*.o
 src/*.so
 src/*.dll
+
+
+# amr search container
+containers/*
+
+# Deprecated scripts
+figures/deprecated/ 
+scripts/figures/deprecated
+
+# Data
+data/
+dhatri_qc_pipeline_results/
