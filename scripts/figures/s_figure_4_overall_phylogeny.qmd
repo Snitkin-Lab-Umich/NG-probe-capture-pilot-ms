@@ -1,0 +1,263 @@
+---
+title: "S Figure 4: Circular phylogeny of all genomes"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ggtree", "cowplot")
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+```
+
+# Data
+
+```{r data}
+source("./lib/processed_data_functions.R")
+load_processed_data(
+  "./data/phylogeny/curated/phylogeny_profile_data.RDS",
+  c(
+    "tree",
+    "major_sts",
+    "phylogeny_track_data",
+    "phylogeny_tracks",
+    "cluster_track_levels",
+    "profile_track_levels"
+  )
+)
+```
+
+# Circular phylogeny
+
+```{r circular-phylogeny}
+st_colors <- setNames(hues::iwanthue(length(major_sts)), major_sts)
+cluster_colors <- setNames(
+  hues::iwanthue(
+    length(cluster_track_levels),
+    hmin = 0,
+    hmax = 360,
+    cmin = 70,
+    cmax = 180,
+    lmin = 55,
+    lmax = 90
+  ),
+  cluster_track_levels
+)
+profile_colors <- setNames(
+  hues::iwanthue(
+    length(profile_track_levels),
+    hmin = 0,
+    hmax = 360,
+    cmin = 60,
+    cmax = 180,
+    lmin = 20,
+    lmax = 58
+  ),
+  profile_track_levels
+)
+track_colors <- c(
+  st_colors,
+  "Other ST" = "#FFFFFF",
+  cluster_colors,
+  "Cluster gap" = "#FFFFFF",
+  profile_colors,
+  "Profile gap" = "#FFFFFF"
+)
+
+circular_selection <- phylogeny_track_data %>%
+  transmute(
+    Isolate = genome_id,
+    chosen_isolate = selected
+  )
+
+circular_tree <- ggtree(
+  tree,
+  layout = "circular",
+  branch.length = "none",
+  linewidth = 0.075
+) %<+%
+  circular_selection +
+  geom_tippoint(
+    aes(subset = chosen_isolate),
+    color = phylogeny_selected_color,
+    size = 0.1,
+    show.legend = FALSE
+  )
+
+# Center the largest contiguous run of minor/Other-ST tips at 12 o'clock,
+# creating a gap in the annotation rings for their numbered labels.
+largest_circular_run <- function(x) {
+  n <- length(x)
+  if (all(x)) return(seq_len(n))
+  runs <- rle(c(x, x))
+  run_ends <- cumsum(runs$lengths)
+  run_starts <- run_ends - runs$lengths + 1
+  candidates <- which(runs$values & run_starts <= n)
+  best <- candidates[which.max(runs$lengths[candidates])]
+  ((seq.int(run_starts[best], length.out = runs$lengths[best]) - 1) %% n) + 1
+}
+
+circular_tip_order <- circular_tree$data %>%
+  filter(isTip) %>%
+  transmute(genome_id = label, y) %>%
+  left_join(
+    phylogeny_track_data %>% select(genome_id, st_track),
+    by = "genome_id"
+  ) %>%
+  arrange(y)
+
+minor_gap_indices <- largest_circular_run(
+  circular_tip_order$st_track == "Other ST"
+)
+minor_gap_center <- (
+  minor_gap_indices[1] - 1 + (length(minor_gap_indices) - 1) / 2
+) %% nrow(circular_tip_order) + 1
+minor_gap_rotation <- 360 * (minor_gap_center - 0.5) /
+  nrow(circular_tip_order)
+
+circular_tree <- gheatmap(
+  circular_tree,
+  phylogeny_tracks,
+  width = 0.12,
+  offset = 0,
+  color = NA,
+  colnames = FALSE
+) +
+  scale_fill_manual(
+    values = track_colors,
+    breaks = c(major_sts, "Other ST")
+  ) +
+  theme(
+    legend.position = "none",
+    plot.margin = margin(0, 0, 0, 0)
+  )
+
+circular_tree <- ggtree::rotate_tree(
+  circular_tree,
+  angle = minor_gap_rotation
+)
+```
+
+# Track legends and output
+
+```{r output, fig.width=10, fig.height=12}
+st_legend <- cowplot::get_legend(
+  make_track_legend(
+    levels = c(major_sts, "Other ST"),
+    colors = c(st_colors, "Other ST" = "#FFFFFF"),
+    labels = c(major_sts, "Other ST"),
+    title = "1. ST",
+    ncol = 6
+  )
+)
+
+cluster_legend <- cowplot::get_legend(
+  make_track_legend(
+    levels = cluster_track_levels,
+    colors = cluster_colors,
+    labels = as.character(seq_along(cluster_track_levels)),
+    title = "2. AA-based clusters",
+    ncol = 6
+  )
+)
+
+profile_legend <- cowplot::get_legend(
+  make_track_legend(
+    levels = profile_track_levels,
+    colors = profile_colors,
+    labels = as.character(seq_along(profile_track_levels)),
+    title = "3. Trait-based partitions",
+    ncol = 6
+  )
+)
+
+track_legends <- ggdraw() +
+  draw_grob(
+    st_legend,
+    x = 0.01,
+    y = 0.075,
+    width = 0.38,
+    height = 1,
+    valign = 1
+  ) +
+  draw_grob(
+    cluster_legend,
+    x = 0.42,
+    y = 0.01,
+    width = 0.38,
+    height = 1,
+    valign = 1
+  ) +
+  draw_grob(
+    profile_legend,
+    x = 0.715,
+    y = 0.19,
+    width = 0.38,
+    height = 1,
+    valign = 1
+  )
+
+figure_s2 <- ggdraw(
+  xlim = c(0, 1),
+  ylim = c(0, 1),
+  clip = "on"
+) +
+  draw_plot(
+    circular_tree,
+    x = -0.159,
+    y = 0.075,
+    width = 1.318,
+    height = 1.017
+  ) +
+  draw_plot(
+    track_legends,
+    x = 0,
+    y = 0,
+    width = 1,
+    height = 2 / 12
+  ) +
+  draw_grob(
+    grid::rectGrob(gp = grid::gpar(col = NA, fill = "white")),
+    x = 0.491,
+    y = 0.942,
+    width = 0.018,
+    height = 0.052
+  ) +
+  draw_label("1", x = 0.5, y = 0.955, size = 8) +
+  draw_label("2", x = 0.5, y = 0.969, size = 8) +
+  draw_label("3", x = 0.5, y = 0.983, size = 8)
+
+ggsave(
+  filename = file.path('figures/s_figure_4_overall_phylogeny.png'),
+  plot = figure_s2,
+  width = 10,
+  height = 12,
+  dpi = 600,
+  bg = "white"
+)
+```

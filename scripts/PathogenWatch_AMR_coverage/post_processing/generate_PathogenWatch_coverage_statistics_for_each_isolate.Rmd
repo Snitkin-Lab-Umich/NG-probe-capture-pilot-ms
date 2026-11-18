@@ -1,0 +1,77 @@
+---
+title: "generate_PathogenWatch_coverage_statistics_for_each_isolate"
+author: "Kyle Gontjes"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T,warning = FALSE, message = FALSE,error=F,comment=NA) 
+opts_chunk$set(echo = T,warning = FALSE, message = FALSE,error=F,comment=NA)
+opts_knit$set(root.dir='~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/')
+```
+
+# Environmental
+
+```{r}
+#Packages
+packages <- c("tidyverse") 
+
+#Load Packages
+invisible(lapply(packages,library,character.only=T,quietly=T))
+
+# Print environment
+set.seed(45) 
+Sys.info()
+sessionInfo()
+```
+
+# Load
+```{r}
+files_of_interest <- list.files("./data/PathogenWatch_AMR_coverage/coverage/gene_coverage",recursive = T,full.names=T) %>% subset(grepl("_summary$",.)) %>% subset(!grepl("sample",.))
+```
+
+# Summary by contig
+```{r}
+calculate_overall_depth <-  function(depth_file_path){
+  isolate = depth_file_path %>% basename() %>% gsub("_summary","",.)
+  depth_file <- read_csv(depth_file_path)
+  depth_file$contig <- depth_file$Locus %>% str_split(.,":",simplify=T) %>% .[,1]
+  loci <- unique(depth_file$contig )
+  locus_coverage <- lapply(loci,get_coverage_contig_level,depth_data=depth_file) %>% do.call(rbind,.)
+  locus_coverage$isolate <- isolate
+  return(locus_coverage)
+  
+}
+
+get_coverage_contig_level <- function(locus,depth_data){
+  depth_contig <- subset(depth_data,contig == locus)
+  # Summary statistics
+  mean <-  sum(depth_contig$Total_Depth) / nrow(depth_contig)
+  median <- median(depth_contig$Total_Depth)  
+  non_zero <- subset(depth_contig$Total_Depth, depth_contig$Total_Depth > 0)
+  mean_non_zero <-  sum(non_zero) / length(non_zero)
+  median_non_zero <- median(non_zero)  
+  # Breadth statistics
+  loci_length <- nrow(depth_contig)
+  n_nonzero_positions <- sum(depth_contig$Total_Depth >0)
+  percent_coverage_1 <- n_nonzero_positions / loci_length * 100
+  percent_coverage_5 <-  sum(depth_contig$Total_Depth >=5) / loci_length * 100
+  percent_coverage_10 <-  sum(depth_contig$Total_Depth >=10) / loci_length * 100
+  percent_coverage_15 <-  sum(depth_contig$Total_Depth >=15) / loci_length * 100
+  percent_coverage_20 <-  sum(depth_contig$Total_Depth >=20) / loci_length * 100
+  percent_coverage_25 <-  sum(depth_contig$Total_Depth >=25) / loci_length * 100
+  percent_coverage_50 <-  sum(depth_contig$Total_Depth >=50) / loci_length * 100
+  
+  results <- cbind.data.frame(locus,mean,median,mean_non_zero,median_non_zero,
+                              loci_length,n_nonzero_positions,
+                              percent_coverage_1,percent_coverage_5,percent_coverage_10,percent_coverage_15,percent_coverage_20,percent_coverage_25,percent_coverage_50)
+  return(results)
+}
+
+coverage_statistics <- pbmcapply::pbmclapply(files_of_interest,calculate_overall_depth,mc.cores=12) %>%  do.call(rbind,.)
+
+saveRDS(coverage_statistics,"./data/PathogenWatch_AMR_coverage/coverage/curated_datasets/PathogenWatch_coverage_master_summary_file.RDS") 
+```

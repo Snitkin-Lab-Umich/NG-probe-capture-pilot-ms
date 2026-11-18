@@ -1,0 +1,16 @@
+Existing manuscript scripts: locations below are their names before numbering, not external source copies.
+
+01__NG_cognac_AA_differences_sites.sbat
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/phylogeny/NG_cognac_AA_differences_sites.sbat
+
+02__NG_cognac_AA_differences_IQTREE.sbat
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/phylogeny/NG_cognac_AA_differences_IQTREE.sbat
+
+03__phylogeny_profile_data_processing.R
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/phylogeny/phylogeny_profile_data_processing.R
+
+04__threshold_profile_data_processing.R
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/phylogeny/threshold_profile_data_processing.R
+
+05__build_phylogeny_data.R
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/phylogeny/build_phylogeny_data.R

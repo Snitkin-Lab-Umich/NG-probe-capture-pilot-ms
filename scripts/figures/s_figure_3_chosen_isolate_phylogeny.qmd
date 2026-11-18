@@ -1,0 +1,301 @@
+---
+title: "s_figure_3: chosen_isolate_phylogeny"
+author: "Kyle Gontjes"
+date: today
+format:
+  html:
+    embed-resources: true
+---
+
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ggtree")
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+ 
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+```
+
+# Data
+
+## Public data
+
+```{r}
+# shared data functions
+source("./lib/processed_data_functions.R")
+
+# phylogeny and profile data
+load_processed_data(
+  "./data/phylogeny/curated/phylogeny_profile_data.RDS",
+  c(
+    "tree_350",
+    "major_sts",
+    "selected_phylogeny_annotations",
+    "resistance_variables",
+    "mutation_variables"
+  )
+)
+```
+
+# Profile data
+
+```{r}
+load_processed_data(
+  "./data/phylogeny/curated/threshold_profile_data.RDS",
+  c(
+    "selected_threshold_350_profiles",
+    "threshold_350_cluster_levels"
+  )
+)
+```
+
+# Create tree
+
+## Scales
+
+```{r}
+st_scale <- hues::iwanthue(n = length(major_sts))
+st_scale_fill <- scale_fill_manual(
+  breaks = c(major_sts, "Other ST"),
+  values = c(st_scale, "white"),
+  name = "Sequence type (ST)",
+  guide = guide_legend(
+    ncol = 6,
+    title.position = "top",
+    label.position = "right"
+  )
+)
+cluster_scale <- scale_fill_manual(
+  values = hues::iwanthue(
+    n = length(threshold_350_cluster_levels)
+  )
+)
+```
+
+# 3k subset
+
+## subsetted to threshold 350
+
+```{r}
+tree_obj_350 <- ggtree(tree_350)
+```
+
+## ST data
+
+```{r}
+col_width_adj <- 0.1
+offset_step <- 0.0040625 * col_width_adj
+
+st_column_350 <- selected_phylogeny_annotations %>%
+  select(genome_id, st_track) %>%
+  column_to_rownames("genome_id") %>%
+  `colnames<-`("Major STs")
+
+p0_350 <- gheatmap(
+  tree_obj_350, st_column_350,
+  color = NA, width = col_width_adj,
+  colnames_position = "top", colnames_angle = 90,
+  colnames_offset_y = 0.25, hjust = 0, font.size = 5.5
+) + st_scale_fill + theme(legend.position = "none")
+
+p0_350.1 <- p0_350 + ggnewscale::new_scale_fill()
+```
+
+## cluster data
+
+```{r}
+cluster_data_350 <- selected_threshold_350_profiles %>%
+  select(genome_id, aa_cluster) %>%
+  column_to_rownames("genome_id")
+
+p1_350 <- gheatmap(
+  p0_350.1,
+  cluster_data_350 %>%
+    select(aa_cluster) %>%
+    `colnames<-`("Cluster"),
+  width = col_width_adj, color = NA,
+  colnames_position = "top", colnames_angle = 90,
+  offset = offset_step, colnames_offset_y = 0.25,
+  hjust = 0, font.size = 5.5
+) + cluster_scale + theme(legend.position = "none")
+
+p1_350.1 <- p1_350 + ggnewscale::new_scale_fill()
+```
+
+## resistance data
+
+```{r}
+resistance_data_350 <- selected_phylogeny_annotations %>%
+  select(genome_id, all_of(resistance_variables)) %>%
+  column_to_rownames("genome_id")
+
+p3_350 <- gheatmap(
+  p1_350.1,
+  resistance_data_350,
+  width = col_width_adj * length(resistance_variables),
+  color = NA, colnames_position = "top", colnames_angle = 90,
+  offset = offset_step * 2, colnames_offset_y = 0.25,
+  hjust = 0, font.size = 5.5
+) + phylogeny_resistance_fill + theme(legend.position = "none")
+
+p3_350.1 <- p3_350 + ggnewscale::new_scale_fill()
+```
+
+## mutational data
+
+```{r}
+mutation_data_350 <- selected_phylogeny_annotations %>%
+  select(genome_id, all_of(mutation_variables)) %>%
+  column_to_rownames("genome_id")
+
+mutation_variable_order <- dist(
+  t(mutation_data_350),
+  method = "binary"
+) %>%
+  hclust() %>%
+  .$order
+
+p4_350 <- gheatmap(
+  p3_350.1,
+  mutation_data_350 %>%
+    select(all_of(rev(mutation_variables[mutation_variable_order]))) %>%
+    `colnames<-`(gsub("_", " ", colnames(.))),
+  width = col_width_adj * length(mutation_variables),
+  color = NA, colnames_position = "top", colnames_angle = 90,
+  offset = offset_step * 10, colnames_offset_y = 0.25,
+  hjust = 0, font.size = 5.5
+) + phylogeny_presence_fill + theme(legend.position = "none") + ylim(NA, 3400)
+```
+
+## add legend 
+
+```{r, fig.width = 10, fig.height = 10}
+get_legend <- function(p) cowplot::get_legend(p + theme(legend.position = "bottom"))
+
+legend_st_plot <- ggplot(
+  data.frame(
+    st_track = factor(
+      c(major_sts, "Other ST"),
+      levels = c(major_sts, "Other ST")
+    )
+  ),
+  aes(x = 1, y = st_track, fill = st_track)
+) +
+  geom_tile() +
+  st_scale_fill +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.title.position = "top",
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    legend.key.size = unit(0.3, "cm"),legend.key = element_rect(colour = c('black'))
+  ) +
+  guides(
+    fill = guide_legend(
+      ncol = 10,
+      byrow = TRUE,
+      title.position = "top",
+      label.position = "right"
+    )
+  )
+
+legend_res_plot <- ggplot(
+  data.frame(Resistance = factor(resistance_levels, levels = resistance_levels)),
+  aes(x = 1, y = Resistance, fill = Resistance)
+) +
+  geom_tile() +
+  phylogeny_resistance_fill +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.title.position = "top",
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    legend.key.size = unit(0.3, "cm")
+  ) +
+  guides(
+    fill = guide_legend(
+      nrow = 6,
+      byrow = TRUE,
+      title.position = "top",
+      label.position = "right"
+    )
+  )
+
+legend_mut_plot <- ggplot(
+  data.frame(Presence = factor(c(1, 0), levels = c(1, 0))),
+  aes(x = 1, y = Presence, fill = Presence)
+) +
+  geom_tile() +
+  phylogeny_presence_fill +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.title.position = "top",
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    legend.key.size = unit(0.3, "cm"),
+    legend.key = element_rect(colour='black')
+  ) +
+  guides(
+    fill = guide_legend( 
+      nrow = 6,
+      byrow = TRUE,
+      title.position = "top",
+      label.position = "right"
+    )
+  )
+
+legend_st <- get_legend(legend_st_plot)
+legend_res <- get_legend(legend_res_plot)
+legend_mut <- get_legend(legend_mut_plot)
+
+legend_row <- cowplot::plot_grid(
+  legend_st,
+  legend_res,
+  legend_mut,
+  nrow = 1,
+  rel_widths = c(0.7, 0.15, 0.15)
+)
+
+# remove white space between phylo and legend
+legend_row <- legend_row + theme(
+    plot.margin = margin(t = -25, r = 0, b = 0, l = 0)
+  )
+
+p5_350 <- cowplot::plot_grid(p4_350, legend_row, ncol = 1, rel_heights = c(1, 0.18)) + ylim(NA, 3400)
+
+p5_350 
+```
+
+## Save the figure
+
+```{r}
+ggsave(
+  filename = "./figures/s_figure_3_chosen_genomes_phylogeny.png",
+  plot = p5_350,
+  dpi = 600, width = 10, height = 10, bg = "white"
+)
+```

@@ -1,0 +1,40 @@
+# Snakefile for NG CaptureSeq Evaluation Pipeline
+
+# Author: Dhatri Badri
+configfile: "config/config_pilot_strains.yaml"
+
+import pandas as pd
+import os
+import csv
+import glob
+import re
+
+samples_df = pd.read_csv(config["samples"])
+SAMPLES = list(samples_df['sample_id'])
+PREFIX = config["prefix"]
+SHORT_READS_DIR = config["short_reads"]
+
+rule all:
+    input:
+        expand("results/{prefix}/{prefix}_Report/{prefix}_QC_summary.csv",prefix=PREFIX),
+        expand("results/{prefix}/mlst/bowtie2/{sample}/report.tsv",prefix=PREFIX, sample=SAMPLES),
+        expand("results/{prefix}/busco/bowtie2/{sample}/busco.txt",prefix=PREFIX, sample=SAMPLES),
+        expand("results/{prefix}/quast/bowtie2/{sample}/report.tsv",prefix=PREFIX, sample=SAMPLES),
+        expand("results/{prefix}/skani/bowtie2/{sample}/{sample}_skani_output.txt",prefix=PREFIX, sample=SAMPLES),
+        expand("results/{prefix}/amrfinder/bowtie2/{sample}/{sample}_amrfinder.tsv",prefix=PREFIX, sample=SAMPLES),
+        expand("results/{prefix}/{prefix}_Report/bowtie2_coverage_summary.tsv", prefix=PREFIX, sample=SAMPLES),
+        expand("results/{prefix}/kraken2/post-binning/{sample}/{sample}_bowtie2.tsv", prefix=PREFIX, sample=SAMPLES),
+        expand("results/{prefix}/kraken2/pre-binning/{sample}/{sample}.tsv", prefix=PREFIX, sample=SAMPLES),
+        expand("results/{prefix}/quality_aftertrim/{sample}/{sample}_Forward/{sample}_clumpify_R1_fastqc.html", prefix=PREFIX, sample=SAMPLES),
+        expand("results/{prefix}/quality_raw/{sample}/{sample}_Forward/{sample}_R1_fastqc.html", prefix=PREFIX, sample=SAMPLES),
+        
+################# rules #################
+include: "rules/1_host_depletion.smk"
+include: "rules/1a_fastqc_raw.smk"
+include: "rules/2_remove_dups_trimming.smk"
+include: "rules/2a_fastqc_aftertrim.smk"
+include: "rules/2b_pre_read_mapping_taxonomy_classification.smk"
+include: "rules/3_read_mapping.smk"
+include: "rules/3a_post_read_mapping_taxonomy_classification.smk"
+include: "rules/4_assembly_quality.smk"
+include: "rules/5_qc_report.smk"

@@ -1,0 +1,113 @@
+---
+title: "Figure 3: QC pipeline statistics using real data"
+author: "Dhatri Badri, Aryan Singh, and Kyle Gontjes"
+date: today
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c(
+  "tidyverse", "ggtext", "cowplot", "ComplexHeatmap",
+  "circlize", "grid", "scales"
+)
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+
+# Shared data
+source("./lib/processed_data_functions.R")
+```
+
+# Clinical isolate data
+```{r}
+load_processed_data(
+  "./data/NG_probe/curated/pilot_qc_data.RDS",
+  c(
+    "qcd_data", "probe_data", "reference_coverage_summary"
+  )
+)
+load_processed_data(
+  "./data/NG_probe/curated/pre_binning_kraken_data.RDS",
+  "pre_binning_kraken_summary"
+)
+
+A <- ggplot(
+  probe_data,
+  aes(x = pool_level, y = enrichment, fill = pool_level)
+) +
+  geom_boxplot() +
+  geom_point() +
+  ylim(0, NA) +
+  pool_fill_scale +
+  labs(x = "Pool", y = "Relative abundance fold change") +
+  theme_bw_me +
+  theme(legend.position = "none")
+```
+
+
+# Scripts used to curate the dataframes and plots
+
+```{r, eval = TRUE, echo=TRUE}
+# Figure B
+source("scripts/figures/figure_3_scripts/figure_3A_read_counts.R", local = TRUE)
+# Figure C
+source("scripts/figures/figure_3_scripts/figure_3C_species_composition.R", local = TRUE)
+# Figure D
+source("scripts/figures/figure_3_scripts/figure_3D_depth_threshold.R", local = TRUE)
+# Figure E-F
+source("scripts/figures/figure_3_scripts/figure_3EF_length_contigs.R", local = TRUE)
+```
+
+# Multi-panel cowplot
+
+```{r, fig.width = 8.75, fig.height = 7}
+aligned <- align_plots(
+  p_len_panel + theme(legend.position = "none"),
+  p_ctg_panel + theme(legend.position = "none"),
+  align = "h", axis = "lr"
+)
+
+part_e <- plot_grid(aligned[[1]], aligned[[2]], 
+                    labels = c("E", "F"), label_x = -0.066, 
+                    nrow = 1, rel_widths = c(1, 1))
+
+p_cov_heat_cow <- cowplot::plot_grid(p_cov_heat,ncol=1)
+
+row_top <- plot_grid(A,p_stage_lines + theme(legend.position='none'), p_taxonomic_progression,nrow = 1,
+                     labels = c("A", "B","C"), rel_widths = c(.5, .75,.5), label_size = 12)
+
+row_bottom <- plot_grid(p_cov_heat_cow, part_e, nrow = 1,
+                        labels = c("D", ""), rel_widths = c(1, 1.5), label_size = 12)
+
+qc_cowplot <- plot_grid(row_top, row_bottom, ncol = 1, rel_heights = c(1, 1))
+
+qc_cowplot
+```
+
+# Save
+
+```{r}
+ggsave("./figures/figure_3_pilot_sequencing_clinical_isolates.png", plot = qc_cowplot, width = 8.75, height = 7, units = "in", dpi = 900)
+```
+ 

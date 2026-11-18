@@ -1,0 +1,431 @@
+---
+title: "Explore probe sets"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "scales", "ggtext", "ggalluvial")
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+source("./lib/processed_data_functions.R")
+
+options(stringsAsFactors = FALSE, scipen = 999)
+
+probe_set_levels <- c("Set 1", "Set 2 (wo6K)")
+probe_set_colors <- c(
+  "Set 1" = "#1B9E77",
+  "Set 2 (wo6K)" = "#7570B3"
+)
+
+coverage_status_levels <- c(
+  "Fully covered",
+  "Partially covered",
+  "Not covered"
+)
+
+coverage_status_colors <- c(
+  "Fully covered" = "#1B9E77",
+  "Partially covered" = "#E6AB02",
+  "Not covered" = "#D95F02"
+)
+```
+
+# Load data
+
+```{r data}
+set_1_data <- readRDS(
+  "./data/probe_mapping/curated/probe_mapping_data.RDS"
+)
+set_2_data <- readRDS(
+  paste0(
+    "./data/probe_mapping/deprecated/",
+    "reference_probe_coverage_data_wo6K.RDS"
+  )
+)
+
+validate_processed_data(set_1_data)
+validate_processed_data(set_2_data)
+
+gene_keys <- c("gene_index", "seqid", "start", "end")
+
+set_1_genes <- set_1_data$gene_coverage %>%
+  select(
+    all_of(gene_keys),
+    gene_id,
+    locus_tag,
+    gene_symbol,
+    set_1_covered_bp = covered_bp,
+    set_1_coverage_percent = coverage_percent,
+    set_1_coverage_status = coverage_status
+  )
+
+set_2_genes <- set_2_data$gene_coverage %>%
+  select(
+    all_of(gene_keys),
+    set_2_covered_bp = covered_bp,
+    set_2_coverage_percent = coverage_percent,
+    set_2_coverage_status = coverage_status
+  )
+
+gene_comparison <- set_1_genes %>%
+  inner_join(set_2_genes, by = gene_keys) %>%
+  mutate(
+    set_1_coverage_status = factor(
+      set_1_coverage_status,
+      levels = coverage_status_levels
+    ),
+    set_2_coverage_status = factor(
+      set_2_coverage_status,
+      levels = coverage_status_levels
+    ),
+    coverage_change = set_1_coverage_percent - set_2_coverage_percent,
+    coverage_changed = abs(coverage_change) > sqrt(.Machine$double.eps),
+    status_changed = set_1_coverage_status != set_2_coverage_status
+  )
+
+if (
+  nrow(gene_comparison) != nrow(set_1_genes) ||
+    nrow(gene_comparison) != nrow(set_2_genes) ||
+    anyDuplicated(gene_comparison[gene_keys]) > 0
+) {
+  stop("The two probe sets did not match one-to-one across reference genes")
+}
+```
+
+# Gene coverage flags
+
+```{r coverage-flags}
+status_counts <- bind_rows(
+  gene_comparison %>%
+    transmute(
+      probe_set = "Set 1",
+      coverage_status = set_1_coverage_status
+    ),
+  gene_comparison %>%
+    transmute(
+      probe_set = "Set 2 (wo6K)",
+      coverage_status = set_2_coverage_status
+    )
+) %>%
+  mutate(
+    probe_set = factor(probe_set, levels = probe_set_levels),
+    coverage_status = factor(
+      coverage_status,
+      levels = coverage_status_levels
+    )
+  ) %>%
+  count(probe_set, coverage_status, .drop = FALSE)
+
+same_status_summary <- gene_comparison %>%
+  filter(set_1_coverage_status == set_2_coverage_status) %>%
+  count(`Coverage status in both sets` = set_1_coverage_status, .drop = FALSE) %>%
+  transmute(
+    `Coverage status in both sets`,
+    `Genes with the same status` = n,
+    `Percent of all genes` = 100 * n / nrow(gene_comparison)
+  )
+
+status_transition_summary <- with(
+  gene_comparison,
+  table(
+    `Rows: Set 2 (wo6K)` = set_2_coverage_status,
+    `Columns: Set 1` = set_1_coverage_status
+  )
+)
+
+same_status_summary
+
+addmargins(status_transition_summary)
+
+p_status_counts <- ggplot(
+  status_counts,
+  aes(coverage_status, n, fill = probe_set)
+) +
+  geom_col(
+    width = 0.66,
+    position = position_dodge(width = 0.72)
+  ) +
+  geom_text(
+    aes(label = comma(n)),
+    position = position_dodge(width = 0.72),
+    vjust = -0.2,
+    size = 3
+  ) +
+  scale_fill_manual(
+    values = probe_set_colors,
+    breaks = probe_set_levels,
+    name = "Probe set"
+  ) +
+  scale_y_continuous(
+    labels = comma,
+    expand = expansion(mult = c(0, 0.08))
+  ) +
+  labs(
+    x = "Level of probe coverage",
+    y = "Genes"
+  ) +
+  theme_figure +
+  theme(legend.position = "bottom")
+
+p_status_counts
+```
+
+# Gene coverage flag transitions
+
+```{r coverage-flag-transitions}
+status_transitions <- gene_comparison %>%
+  count(
+    set_1_coverage_status,
+    set_2_coverage_status,
+    name = "genes",
+    .drop = FALSE
+  ) %>%
+  group_by(set_1_coverage_status) %>%
+  mutate(
+    display_weight = genes / sum(genes),
+    count_weight = if_else(
+      display_weight > 0,
+      genes / display_weight,
+      0
+    )
+  ) %>%
+  ungroup()
+
+p_status_transitions <- ggplot(
+  status_transitions,
+  aes(
+    axis1 = set_1_coverage_status,
+    axis2 = set_2_coverage_status,
+    y = display_weight,
+    weight = count_weight
+  )
+) +
+  geom_alluvium(
+    aes(fill = set_1_coverage_status),
+    width = 0.18,
+    alpha = 0.75,
+    color = "grey75",
+    linewidth = 0.2,
+    discern = TRUE
+  ) +
+  geom_stratum(
+    width = 0.18,
+    fill = "white",
+    color = "black",
+    linewidth = 0.4,
+    discern = TRUE
+  ) +
+  geom_text(
+    stat = "stratum",
+    discern = TRUE,
+    aes(
+      label = paste0(
+        sub("\\.[0-9]+$", "", after_stat(stratum)),
+        "\n(n = ",
+        comma(after_stat(count)),
+        ")"
+      )
+    ),
+    size = 3
+  ) +
+  scale_x_discrete(
+    limits = c("Set 1 (current)", "Set 2 (wo6K)"),
+    expand = expansion(mult = c(0.18, 0.18))
+  ) +
+  scale_fill_manual(
+    values = coverage_status_colors,
+    breaks = coverage_status_levels,
+    name = "Set 1 coverage status"
+  ) +
+  scale_y_continuous(breaks = NULL, expand = expansion(mult = c(0, 0.02))) +
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+  theme_figure +
+  theme(
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.line.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.position = "bottom"
+  )
+
+p_status_transitions
+```
+
+# Partial gene coverage distributions
+
+```{r partial-coverage-distributions}
+partial_coverage_distribution <- bind_rows(
+  gene_comparison %>%
+    filter(set_1_coverage_status == "Partially covered") %>%
+    transmute(
+      probe_set = "Set 1",
+      coverage_percent = set_1_coverage_percent
+    ),
+  gene_comparison %>%
+    filter(set_2_coverage_status == "Partially covered") %>%
+    transmute(
+      probe_set = "Set 2 (wo6K)",
+      coverage_percent = set_2_coverage_percent
+    )
+) %>%
+  mutate(probe_set = factor(probe_set, levels = probe_set_levels))
+
+p_partial_distributions <- ggplot(
+  partial_coverage_distribution,
+  aes(coverage_percent, fill = probe_set)
+) +
+  geom_histogram(
+    binwidth = 2.5,
+    boundary = 0,
+    position = "identity",
+    alpha = 0.55,
+    color = "white"
+  ) +
+  scale_fill_manual(
+    values = probe_set_colors,
+    breaks = probe_set_levels,
+    name = "Probe set"
+  ) +
+  scale_x_continuous(
+    limits = c(0, 100),
+    breaks = seq(0, 100, 20),
+    labels = label_number(suffix = "%")
+  ) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    x = "Percent covered by probes",
+    y = "Partially covered genes"
+  ) +
+  theme_figure +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    legend.position = "bottom"
+  )
+
+p_partial_distributions
+```
+
+# Change in gene coverage (set 1 (new) - set 2 (old))
+
+```{r coverage-change}
+coverage_change_summary <- gene_comparison %>%
+  summarise(
+    genes = n(),
+    increased = sum(coverage_change > sqrt(.Machine$double.eps)),
+    unchanged = sum(!coverage_changed),
+    decreased = sum(coverage_change < -sqrt(.Machine$double.eps)),
+    status_changed = sum(status_changed),
+    median_change = median(coverage_change),
+    mean_change = mean(coverage_change)
+  )
+
+coverage_change_summary %>%
+  favorite_kable()
+
+p_coverage_change_all <- ggplot(
+  gene_comparison,
+  aes(coverage_change)
+) +
+  geom_histogram(
+    binwidth = 2.5,
+    center = 0,
+    color = "white",
+    fill = probe_set_colors[["Set 1"]]
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey35") +
+  scale_x_continuous(
+    breaks = pretty_breaks(10),
+    labels = label_number(suffix = " pp")
+  ) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    x = "Coverage change (Set 1 - Set 2)",
+    y = "Genes",
+    title = "All genes"
+  ) +
+  theme_figure
+
+p_coverage_change_all
+
+p_coverage_change_changed <- gene_comparison %>%
+  filter(coverage_changed) %>%
+  ggplot(aes(coverage_change)) +
+  geom_histogram(
+    binwidth = 2.5,
+    center = 0,
+    color = "white",
+    fill = probe_set_colors[["Set 1"]]
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey35") +
+  scale_x_continuous(
+    breaks = pretty_breaks(10),
+    labels = label_number(suffix = " pp")
+  ) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    x = "Coverage change (Set 1 - Set 2)",
+    y = "Genes",
+    title = "Genes with unchanged coverage removed"
+  ) +
+  theme_figure
+
+p_coverage_change_changed
+```
+
+# Genes not covered by either probe set
+
+```{r not-covered-genes}
+not_covered_gene_changes <- gene_comparison %>%
+  filter(
+    set_1_coverage_status == "Not covered" |
+      set_2_coverage_status == "Not covered"
+  ) %>%
+  arrange(
+    set_2_coverage_status,
+    set_1_coverage_status,
+    gene_index
+  ) %>%
+  transmute(
+    Gene = coalesce(gene_symbol, locus_tag, gene_id),
+    `Locus tag` = locus_tag,
+    `Set 1 status` = as.character(set_1_coverage_status),
+    `Set 1 coverage (%)` = round(set_1_coverage_percent, 2),
+    `Set 2 (wo6K) status` = as.character(set_2_coverage_status),
+    `Set 2 (wo6K) coverage (%)` = round(set_2_coverage_percent, 2),
+    `Change (Set 1 - Set 2, pp)` = round(coverage_change, 2)
+  )
+
+not_covered_gene_changes %>%
+  favorite_kable()
+```

@@ -1,0 +1,240 @@
+---
+title: "results_05_pilot_on_clinical_specimens"
+author: "Kyle Gontjes & Aryan Singh"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+
+```{r environment}
+packages <- c("tidyverse")
+invisible(lapply(packages, library, character.only = T, quietly = T))
+
+set.seed(45)
+options(tibble.width = Inf, pillar.sigfig = 6, width = 200)
+
+# Function
+source("./lib/consistent_themes.R")
+source("./lib/processed_data_functions.R")
+source("./scripts/pathogenwatch/01__pathogenwatch_summary_functions.R")
+source("./scripts/PathogenWatch_AMR_coverage/clinical_mutation_functions.R")
+
+# System
+Sys.info()
+sessionInfo()
+```
+
+```{r}
+load_processed_data(
+  "./data/NG_probe/curated/pilot_qc_data.RDS",
+  c(
+    "qcd_data",
+    "qcd_data_passing",
+    "probe_data",
+    "reference_coverage_summary"
+  )
+)
+
+load_processed_data(
+  "./data/NG_probe/curated/figure_3_species_data.RDS",
+  "ng_abund_initial"
+)
+
+load_processed_data(
+  "./data/NG_probe/curated/pilot_assembly_data.RDS",
+  "mlst_data"
+)
+
+load_processed_data(
+  "./data/PathogenWatch_AMR_coverage/curated/pathogenwatch_coverage_data.RDS",
+  c(
+    "isolates",
+    "coverage_qc",
+    "coverage_breadth_data"
+  )
+)
+
+load_processed_data(
+  "./data/amrsearch_10_20_2026_probes/curated/amrsearch_data.RDS",
+  c("amrsearch_gene_data", "amrsearch_contig_data", "gene_calls")
+)
+
+load_processed_data(
+  "./data/PathogenWatch_AMR_coverage/curated/pathogenwatch_mutation_data.RDS",
+  "mutation_positions"
+)
+```
+
+## Change in enrichment
+```{r}
+probe_data %>% arrange(-enrichment) %>%  favorite_kable()
+
+paste0("Range in fold change: ",paste0(range(probe_data$enrichment),collapse='-'))
+```
+
+
+## Read relative abundance:
+```{r}
+ng_abund_initial %>% arrange(-relative_abundance) %>% favorite_kable()
+
+fivenum(ng_abund_initial$relative_abundance,na.rm = T) %>% `names<-`(c("min",'lower-hinge','median','upper-hinge',"max"))
+```
+
+## Coverage data
+```{r}
+reference_coverage_by_pool <- reference_coverage_summary %>%
+  pivot_longer(
+    cols = starts_with("coverage_"),
+    names_to = "depth_threshold",
+    names_prefix = "coverage_",
+    values_to = "genome_coverage_percent"
+  ) %>%
+  group_by(pool_level, depth_threshold) %>%
+  summarise(
+    median_percent = median(genome_coverage_percent),
+    minimum_percent = min(genome_coverage_percent),
+    maximum_percent = max(genome_coverage_percent),
+    .groups = "drop"
+  )
+
+reference_coverage_by_pool %>% favorite_kable()
+```
+
+
+## Assembly QC data
+```{r}
+paste0("QC-passing genomes: ")
+table(qcd_data$qc_passing)
+
+table(qcd_data$total_length,qcd_data$qc_passing)
+table(qcd_data$num_contigs,qcd_data$qc_passing)
+```
+## MLST data
+```{r}
+passing_mlst <- mlst_data %>%
+  filter(sample %in% qcd_data_passing$sample)
+
+passing_mlst %>% select(-filename) %>% favorite_kable()
+
+paste0("Summary: ")
+passing_mlst %>%
+  summarise(
+    assemblies = n(),
+    typed_assemblies = sum(!is.na(ST) & ST != "-"),
+    distinct_sequence_types = n_distinct(ST[!is.na(ST) & ST != "-"]),
+    unassigned_assemblies = sum(is.na(ST) | ST == "-")
+  ) %>% favorite_kable()
+```
+
+
+# Resistance genotype analyes
+## Genotype detection
+```{r}
+detected_amrsearch_genotypes <- amrsearch_gene_data %>%
+  filter(isolate %in% isolates) %>%
+  distinct(genotype_name, entry) %>%
+  arrange(entry, genotype_name)
+
+detected_amrsearch_genotypes_count <- amrsearch_gene_data %>%
+  filter(isolate %in% isolates) %>% group_by(genotype_name,entry) %>% summarise(n=n() , percent = n/length(isolates)*100) 
+
+# Genes
+paste0("Gene detections")
+detected_amrsearch_genotypes_count %>% subset(entry == "gene") %>% arrange(-n) %>% favorite_kable()
+
+# Variants
+paste0("Variant detections")
+detected_amrsearch_genotypes_count %>% subset(entry == "variant")  %>% arrange(-n) %>% favorite_kable()
+```
+
+
+## Contig distance data
+```{r}
+paste0("Contig size: ")
+fivenum(amrsearch_contig_data$length,na.rm = T) %>% `names<-`(c("min",'lower-hinge','median','upper-hinge',"max"))
+paste0("Contig distance from barrier: ")
+add_contig_barrier <-  function(data) {
+  data %>%
+    mutate(
+      dist_from_start = contig_start - 1,
+      dist_from_end = length - contig_stop,
+      min_dist_to_edge = pmin(dist_from_start, dist_from_end)
+    )
+}
+amrsearch_contig_data <- add_contig_barrier(amrsearch_contig_data)
+
+fivenum(amrsearch_contig_data$min_dist_to_edge,na.rm = T) %>% `names<-`(c("min",'lower-hinge','median','upper-hinge',"max"))
+```
+
+# Coverage data
+```{r}
+locus_position_coverage <- coverage_qc %>%
+  group_by(locus, locus_position) %>%
+  summarise(
+    isolates_with_coverage = sum(depth > 0),
+    .groups = "drop"
+  )
+
+locus_coverage_summary <- locus_position_coverage %>%
+  summarise(
+    loci = n_distinct(locus),
+    locus_positions = n(),
+    positions_with_coverage = sum(isolates_with_coverage > 0),
+    positions_with_coverage_percent = 100 * mean(isolates_with_coverage > 0)
+  )
+
+mutation_position_coverage <- mutation_positions %>%
+  left_join(
+    locus_position_coverage,
+    by = c("locus", "locus_position")
+  )
+
+mutation_isolate_coverage <- coverage_qc %>%
+  inner_join(
+    mutation_positions,
+    by = c("locus", "locus_position"),
+    relationship = "many-to-one"
+  )
+
+mutation_coverage_summary <- mutation_position_coverage %>%
+  summarise(
+    database_positions = n(),
+    positions_covered_in_at_least_one_isolate = sum(isolates_with_coverage > 0),
+    positions_covered_in_all_isolates = sum(isolates_with_coverage == length(isolates))
+  ) %>%
+  mutate(
+    isolate_position_observations = nrow(mutation_isolate_coverage),
+    isolate_position_observations_with_coverage = sum(
+      mutation_isolate_coverage$depth > 0
+    ),
+    isolate_position_observations_with_coverage_percent =
+      100 * mean(mutation_isolate_coverage$depth > 0)
+  )
+
+called_locus_coverage_20x <- coverage_breadth_data %>%
+  filter(depth_threshold == 20) %>%
+  semi_join(gene_calls, by = c("isolate", "locus")) %>%
+  summarise(
+    isolate_locus_pairs_at_least_90_percent = sum(percent_coverage >= 90),
+    called_isolate_locus_pairs = n(),
+    percent_at_least_90_percent = 100 * mean(percent_coverage >= 90)
+  )
+
+
+paste0("Mutations in database with coverage in our isolates")
+mutation_coverage_summary %>% favorite_kable()
+
+paste0("Isolate locus pairs with coverage over 20X breadth: ")
+called_locus_coverage_20x %>% favorite_kable()
+```
+

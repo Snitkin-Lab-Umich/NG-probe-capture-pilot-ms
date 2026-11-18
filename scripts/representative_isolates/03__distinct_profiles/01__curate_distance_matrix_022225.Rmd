@@ -1,0 +1,24 @@
+---
+title: "curate_distance_matrix"
+output: html_document
+date: "2025-02-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(ape)
+library(parallel)
+
+setwd("~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = getwd())
+
+# distance matrix
+distmat <- read.table("../../2024_NG_enrichment_probe_creation/2024-12-17_cognac/results/distMat.tsv", header = TRUE, row.names = 1, check.names = FALSE) # takes a few minutes to load
+saveRDS(distmat,"./data/phylogeny/source/dist_mat.RDS")
+saveRDS(list(script = "scripts/representative_isolates/03__distinct_profiles/01__curate_distance_matrix_022225.Rmd", original_script = "../../2024_NG_enrichment_probe_creation/2025-02-22_distinct_profiles/setup/curate_distance_matrix_022225.Rmd", input_files = "../../2024_NG_enrichment_probe_creation/2024-12-17_cognac/results/distMat.tsv", generated_at = Sys.time()), "./data/phylogeny/source/dist_mat_provenance.RDS")
+
+```

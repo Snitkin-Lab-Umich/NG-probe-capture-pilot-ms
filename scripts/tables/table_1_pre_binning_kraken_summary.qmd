@@ -1,0 +1,92 @@
+---
+title: "Table 1: Pre-binning Kraken classification summary"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+packages <- c("tidyverse")
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+source("./lib/processed_data_functions.R")
+
+table_prefix <- "./tables/table_1_pre_binning_kraken_summary"
+dir.create(dirname(table_prefix), recursive = TRUE, showWarnings = FALSE)
+```
+
+# Pre-binning Kraken summary
+
+```{r}
+load_processed_data(
+  "./data/NG_probe/curated/pre_binning_kraken_data.RDS",
+  "pre_binning_kraken_summary"
+)
+
+kraken_table <- pre_binning_kraken_summary %>%
+  mutate(
+    pool_level = factor(
+      as.character(pool_level),
+      levels = c("High", "Medium", "Low")
+    )
+  ) %>%
+  arrange(pool_level, unclassified_percent) %>%
+  transmute(
+    Isolate = sample,
+    Pool = as.character(pool_level),
+    `Total read pairs` = total_reads,
+    `Unclassified, n (%)` = sprintf(
+      "%s (%.2f%%)",
+      scales::comma(unclassified_reads),
+      unclassified_percent
+    ),
+    `Bacteria, n (%)` = sprintf(
+      "%s (%.2f%%)",
+      scales::comma(bacteria_reads),
+      bacteria_percent
+    ),
+    `Neisseria, n (%)` = sprintf(
+      "%s (%.2f%%)",
+      scales::comma(neisseria_reads),
+      neisseria_percent
+    ),
+    `N. gonorrhoeae, n (%)` = sprintf(
+      "%s (%.2f%%)",
+      scales::comma(ng_reads),
+      ng_percent
+    ),
+    `Bacteria identified as Neisseria (%)` = sprintf(
+      "%.2f",
+      bacteria_as_neisseria_percent
+    ),
+    `Neisseria identified as N. gonorrhoeae (%)` = sprintf(
+      "%.2f",
+      neisseria_as_ng_percent
+    )
+  )
+
+if (nrow(kraken_table) != 12 || anyDuplicated(kraken_table$Isolate)) {
+  stop("Expected one Kraken summary row for each of the 12 pilot isolates")
+}
+
+readr::write_csv(kraken_table, paste0(table_prefix, ".csv"))
+kraken_table
+```

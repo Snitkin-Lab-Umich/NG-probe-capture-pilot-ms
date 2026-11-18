@@ -1,0 +1,42 @@
+#!/bin/bash
+#SBATCH --job-name=copy_NG_probe
+#SBATCH --mail-user=aryansin@umich.edu
+#SBATCH --account=esnitkin1
+#SBATCH --partition=standard
+#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=15g --time=3:00:00
+#SBATCH --output=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/NG_probe/copy_files/copy_files_%j.out
+
+set -euo pipefail
+
+NG_probe_location=/scratch/esnitkin_root/esnitkin1/dhatrib/NG-probe
+manuscript_folder=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms
+run=2026-10-20_pilot-strains_NG-probe
+
+scripts_out=$manuscript_folder/scripts/NG_probe
+slurm_out=$manuscript_folder/slurm_out/NG_probe
+data_out=$manuscript_folder/data/NG_probe
+
+mkdir -p "$scripts_out" "$slurm_out" "$data_out"
+
+# Provenance
+echo "Date:            $(date)"
+echo "User:            $USER"
+echo "Source:          $NG_probe_location"
+echo "Run:             $run"
+echo "Destination:     $manuscript_folder"
+
+# Scripts (no trailing slash on sources: keeps each folder as a folder)
+rsync -av --no-group \
+  "$NG_probe_location/workflow" \
+  "$NG_probe_location/busco_downloads" \
+  "$NG_probe_location/run_NG-probe.sbat" \
+  "$scripts_out/"
+cp "$0" "$scripts_out/copy_NG_probe.sbat"
+
+# Slurm output (trailing slash on sources: copies contents only)
+rsync -av --no-group "$NG_probe_location/benchmarks/$run/" "$slurm_out/benchmarks/"
+rsync -av --no-group "$NG_probe_location/logs/$run/"       "$slurm_out/logs/"
+rsync -av --no-group "$NG_probe_location/slurm_out/"       "$slurm_out/jobs/"
+
+# Results (trailing slash: copies contents only)
+rsync -av --no-group "$NG_probe_location/results/$run/" "$data_out/"

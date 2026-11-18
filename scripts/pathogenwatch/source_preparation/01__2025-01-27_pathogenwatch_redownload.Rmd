@@ -1,0 +1,55 @@
+---
+title: "2025-01-27_pathogenwatch_redownload"
+output: html_document
+date: "2025-01-27"
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+knitr::opts_knit$set(root.dir = '~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms')
+```
+
+```{r}
+# packages
+pacman::p_load(tidyverse) 
+
+# read in manually downloaded pathogen watch data
+
+read_and_bind <- function(file_list) {
+  data_list <- lapply(file_list, read.csv)
+  
+  # union of all column names across files
+  all_columns <- Reduce(union, lapply(data_list, colnames))
+  
+  # add missing columns with NA to each dataframe
+  data_list <- lapply(data_list, function(df) {
+    df[setdiff(all_columns, colnames(df))] <- NA
+    df
+  })
+  
+  bind_rows(data_list)
+}
+
+get_presence_absence_matrix <- function(df,variable){
+  presences <- str_split(unlist(c(df %>% dplyr::select(paste0(variable)))),",") %>% unlist(.)  %>% unique(.) %>% .[!. %in% "-"] %>% sort %>% subset(. != "")
+  vector <- as.vector(tidyr::unite(df %>% dplyr::select(paste0(variable)),determinants,sep =",")) %>% unlist() %>% as.vector
+  results <- matrix(nrow = nrow(df),ncol=length(presences))  %>% `colnames<-`(presences)
+for(i in presences){
+  results[,paste0(i)] <- as.vector(ifelse(unlist(lapply(str_split(as.matrix(df[,paste0(variable)]),","), function(x) i %in% x))==TRUE,1,0))
+}
+  rownames(results) <- rownames(df)
+  return(results)
+}
+
+ng_snp <- read_and_bind(list.files("../../data/ng_pathogenwatch_files/amr_snps_by_5k/", pattern = "*.csv", full.names = TRUE))
+rownames(ng_snp) <- ng_snp$Genome.Name
+
+ng_snp_variants <- get_presence_absence_matrix(ng_snp, "Variants")
+ng_snp_acquired <- get_presence_absence_matrix(ng_snp, "Acquired")
+
+ng_snp <- cbind(ng_snp[,1:4], ng_snp_variants, ng_snp_acquired)
+
+write_rds(ng_snp, file = "../../data/ng_pathogenwatch_files/ng_snps.RDS")
+saveRDS(list(script = "scripts/pathogenwatch/source_preparation/01__2025-01-27_pathogenwatch_redownload.Rmd", original_script = "../../2024_NG_enrichment_probe_creation/2025-01-27_pathogenwatch_redownload.Rmd", input_files = list.files("../../data/ng_pathogenwatch_files/amr_snps_by_5k/", pattern = "*.csv", full.names = TRUE), generated_at = Sys.time()), "../../data/ng_pathogenwatch_files/ng_snps_provenance.RDS")
+```

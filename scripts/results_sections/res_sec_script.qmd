@@ -1,0 +1,554 @@
+---
+title: "Result Section Script"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+execute:
+  warning: false
+  message: false
+---
+
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+```{r environment}
+packages <- c("tidyverse")
+invisible(lapply(packages, library, character.only = T, quietly = T))
+
+set.seed(45)
+options(tibble.width = Inf, pillar.sigfig = 6, width = 200)
+Sys.info()
+sessionInfo()
+
+source("./lib/processed_data_functions.R")
+source("./scripts/pathogenwatch/01__pathogenwatch_summary_functions.R")
+source("./scripts/PathogenWatch_AMR_coverage/clinical_mutation_functions.R")
+
+load_processed_data(
+  "./data/pathogenwatch/curated/pathogenwatch_data.RDS",
+  c(
+    "ng_sample_metadata",
+    "ng_meta",
+    "pathogenwatch_isolate_data",
+    "resistance_variables",
+    "mutation_variables",
+    "chosen_genome_ids"
+  )
+)
+
+load_processed_data(
+  "./data/phylogeny/curated/phylogeny_profile_data.RDS",
+  "profile_assignments"
+)
+
+load_processed_data(
+  "./data/phylogeny/curated/threshold_profile_data.RDS",
+  "threshold_profiles"
+)
+
+load_processed_data(
+  "./data/probe_mapping/curated/probe_mapping_data.RDS",
+  c(
+    "reference_genome_summary",
+    "reference_gene_summary",
+    "partial_gene_summary",
+    "amr_gene_coverage",
+    "amr_reference_summary"
+  )
+)
+
+load_processed_data(
+  "./data/NG_probe/curated/pilot_qc_data.RDS",
+  c(
+    "qcd_data",
+    "qcd_data_passing",
+    "probe_data",
+    "reference_coverage_summary"
+  )
+)
+
+load_processed_data(
+  "./data/NG_probe/curated/figure_3_species_data.RDS",
+  "ng_abund_initial"
+)
+
+load_processed_data(
+  "./data/NG_probe/curated/pilot_assembly_data.RDS",
+  "mlst_data"
+)
+
+load_processed_data(
+  "./data/PathogenWatch_AMR_coverage/curated/pathogenwatch_coverage_data.RDS",
+  c(
+    "isolates",
+    "coverage_qc",
+    "coverage_breadth_data"
+  )
+)
+
+load_processed_data(
+  "./data/amrsearch_10_20_2026_probes/curated/amrsearch_data.RDS",
+  c("amrsearch_gene_data", "amrsearch_contig_data", "gene_calls")
+)
+
+load_processed_data(
+  "./data/PathogenWatch_AMR_coverage/curated/pathogenwatch_mutation_data.RDS",
+  "mutation_positions"
+)
+```
+
+```{r global-collection}
+# Characterization of a global collection of publicly available Neisseria gonorrhoeae genomes
+
+collection_year_summary <- pathogenwatch_isolate_data %>%
+  summarise(
+    genomes_with_year = sum(!is.na(collection_year)),
+    genomes_in_2010s = sum(collection_decade == 2010, na.rm = TRUE),
+    percent_in_2010s = 100 * mean(collection_decade == 2010, na.rm = TRUE),
+    median_year = median(collection_year, na.rm = TRUE),
+    year_q1 = unname(quantile(collection_year, 0.25, na.rm = TRUE)),
+    year_q3 = unname(quantile(collection_year, 0.75, na.rm = TRUE)),
+    missing_year = sum(is.na(collection_year))
+  )
+
+continent_summary <- pathogenwatch_isolate_data %>%
+  filter(!is.na(collection_continent)) %>%
+  count(collection_continent, sort = TRUE) %>%
+  mutate(percent = 100 * n / sum(n))
+
+country_summary <- pathogenwatch_isolate_data %>%
+  filter(!is.na(collection_country), collection_country != "Unknown") %>%
+  count(collection_country, sort = TRUE) %>%
+  mutate(percent_all_genomes = 100 * n / nrow(pathogenwatch_isolate_data))
+
+sequence_type_summary <- pathogenwatch_isolate_data %>%
+  filter(!is.na(sequence_type)) %>%
+  count(sequence_type, sort = TRUE) %>%
+  mutate(percent = 100 * n / sum(n))
+
+resistance_summary <- summarise_resistance(
+  pathogenwatch_isolate_data,
+  isolate_column = "genome_id",
+  resistance_levels = c("RESISTANT", "INTERMEDIATE", "NOT_FOUND"),
+  resistance_columns = resistance_variables
+) %>%
+  filter(value != "NOT_FOUND") %>%
+  group_by(variable) %>%
+  summarise(n = sum(n), percent = sum(perc), .groups = "drop") %>%
+  mutate(variable = as.character(variable)) %>%
+  arrange(match(variable, resistance_variables))
+
+raw_mutation_variables <- setdiff(
+  colnames(ng_meta),
+  c("Isolate", "Genome Name.y", resistance_variables)
+)
+
+nrow(pathogenwatch_isolate_data) # genomes in the global collection
+n_distinct(na.omit(ng_sample_metadata$`Collection label`)) # Pathogenwatch collections
+collection_year_summary # collection-year distribution, including the 2010s and missing years
+sum(!is.na(pathogenwatch_isolate_data$collection_continent)) # genomes with location metadata
+continent_summary # continent distribution among genomes with location metadata
+nrow(country_summary) # represented countries
+slice_head(country_summary, n = 5) # five largest country contributors
+nrow(sequence_type_summary) # sequence types
+slice_head(sequence_type_summary, n = 5) # five most abundant sequence types
+resistance_summary # predicted non-susceptibility for eight antibiotics
+length(raw_mutation_variables) # resistance-associated mutations
+n_distinct(sub("_.*", "", raw_mutation_variables)) # resistance-associated loci
+ng_meta %>% select(all_of(c(resistance_variables, raw_mutation_variables))) %>% distinct() %>% nrow() # distinct raw genotype and resistance patterns
+pathogenwatch_isolate_data %>% select(all_of(c(resistance_variables, mutation_variables))) %>% distinct() %>% nrow() # distinct gene-grouped genotype and resistance patterns
+```
+
+```{r representative-sample}
+# Generation of a representative sample of publicly available isolates to inform probe design
+
+threshold_cluster_summary <- threshold_profiles %>%
+  mutate(across(-genome_id, as.character)) %>%
+  pivot_longer(
+    cols = -genome_id,
+    names_to = "threshold",
+    values_to = "profile"
+  ) %>%
+  mutate(
+    threshold = as.integer(threshold),
+    aa_cluster = sub("[.].*$", "", profile)
+  ) %>%
+  count(threshold, aa_cluster, name = "cluster_size") %>%
+  group_by(threshold) %>%
+  summarise(
+    multi_genome_clusters = sum(cluster_size > 1),
+    genomes_in_multi_genome_clusters = sum(cluster_size[cluster_size > 1]),
+    singleton_groups = sum(cluster_size == 1),
+    total_aa_groups = n(),
+    .groups = "drop"
+  )
+
+aa_group_sizes <- profile_assignments %>%
+  count(aa_cluster, name = "group_size") %>%
+  transmute(grouping = "350-AA groups", group_size)
+
+partitioned_group_sizes <- profile_assignments %>%
+  count(profile, name = "group_size") %>%
+  transmute(grouping = "Genotype- and resistance-partitioned groups", group_size)
+
+group_size_summary <- bind_rows(
+  aa_group_sizes,
+  partitioned_group_sizes
+) %>%
+  group_by(grouping) %>%
+  summarise(
+    groups = n(),
+    singleton_groups = sum(group_size == 1),
+    multi_genome_groups = sum(group_size > 1),
+    median_size = median(group_size),
+    size_q1 = unname(quantile(group_size, 0.25)),
+    size_q3 = unname(quantile(group_size, 0.75)),
+    maximum_size = max(group_size),
+    .groups = "drop"
+  )
+
+nrow(profile_assignments) # genomes assigned to amino acid clusters
+threshold_cluster_summary %>% filter(singleton_groups == 0) %>% slice_min(threshold, n = 1) # first threshold with every genome in a multi-genome cluster
+threshold_cluster_summary %>% filter(threshold == 350) # 350-amino acid distance clusters and singleton groups
+n_distinct(profile_assignments$profile) # genotype- and resistance-partitioned groups
+length(chosen_genome_ids) # representative genomes selected for probe design
+group_size_summary # group sizes before and after genotype and resistance partitioning
+```
+
+```{r chosen-comparison}
+# Chosen assemblies capture genotype distributions despite shifting lineage compositions
+
+overall_data <- pathogenwatch_isolate_data %>%
+  mutate(study = "Overall")
+
+chosen_data <- pathogenwatch_isolate_data %>%
+  filter(is_chosen) %>%
+  mutate(study = "Chosen")
+
+comparison_data <- bind_rows(overall_data, chosen_data)
+
+temporal_comparison <- comparison_data %>%
+  filter(!is.na(collection_decade)) %>%
+  group_by(study) %>%
+  summarise(
+    genomes_with_year = n(),
+    genomes_in_2010s = sum(collection_decade == 2010),
+    percent_in_2010s = 100 * mean(collection_decade == 2010),
+    .groups = "drop"
+  )
+
+set.seed(45)
+decade_fisher_p <- fisher.test(
+  table(comparison_data$collection_decade, comparison_data$study),
+  simulate.p.value = TRUE
+)$p.value
+
+continent_comparison <- comparison_data %>%
+  filter(!is.na(collection_continent)) %>%
+  count(study, collection_continent) %>%
+  group_by(study) %>%
+  mutate(
+    total = sum(n),
+    percent = 100 * n / total
+  ) %>%
+  ungroup()
+
+sequence_type_comparison <- tibble(
+  global_sequence_types = n_distinct(overall_data$sequence_type, na.rm = TRUE),
+  chosen_sequence_types = n_distinct(chosen_data$sequence_type, na.rm = TRUE)
+) %>%
+  mutate(percent_represented = 100 * chosen_sequence_types / global_sequence_types)
+
+set.seed(45)
+sequence_type_fisher_p <- fisher.test(
+  table(comparison_data$sequence_type, comparison_data$study),
+  simulate.p.value = TRUE
+)$p.value
+
+resistance_distribution <- comparison_data %>%
+  pivot_longer(
+    cols = all_of(resistance_variables),
+    names_to = "antibiotic",
+    values_to = "prediction"
+  ) %>%
+  group_by(antibiotic, study) %>%
+  summarise(
+    nonsusceptible = sum(prediction != "NOT_FOUND"),
+    total = n(),
+    percent = 100 * mean(prediction != "NOT_FOUND"),
+    .groups = "drop"
+  )
+
+resistance_p_values <- map_dfr(
+  resistance_variables,
+  function(antibiotic) {
+    nonsusceptible <- comparison_data[[antibiotic]] != "NOT_FOUND"
+    tibble(
+      antibiotic = antibiotic,
+      fisher_p = fisher.test(
+        table(nonsusceptible, comparison_data$study)
+      )$p.value
+    )
+  }
+)
+
+resistance_comparison <- resistance_distribution %>%
+  pivot_wider(
+    names_from = study,
+    values_from = c(nonsusceptible, total, percent)
+  ) %>%
+  left_join(resistance_p_values, by = "antibiotic") %>%
+  arrange(match(antibiotic, resistance_variables))
+
+mutation_distribution <- comparison_data %>%
+  pivot_longer(
+    cols = all_of(mutation_variables),
+    names_to = "locus",
+    values_to = "value"
+  ) %>%
+  mutate(present = as.numeric(as.character(value)) > 0) %>%
+  group_by(locus, study) %>%
+  summarise(
+    present = sum(present),
+    total = n(),
+    percent = 100 * mean(present),
+    .groups = "drop"
+  )
+
+mutation_p_values <- map_dfr(
+  mutation_variables,
+  function(locus) {
+    present <- as.numeric(as.character(comparison_data[[locus]])) > 0
+    tibble(
+      locus = locus,
+      fisher_p = fisher.test(
+        table(present, comparison_data$study)
+      )$p.value
+    )
+  }
+)
+
+mutation_comparison <- mutation_distribution %>%
+  pivot_wider(
+    names_from = study,
+    values_from = c(present, total, percent)
+  ) %>%
+  left_join(mutation_p_values, by = "locus") %>%
+  arrange(fisher_p)
+
+temporal_comparison # genomes collected during the 2010s in the chosen and overall collections
+decade_fisher_p # Fisher exact test for collection decade
+continent_comparison # continent representation in the chosen and overall collections
+sequence_type_comparison # sequence types retained in the chosen collection
+sequence_type_fisher_p # Fisher exact test for sequence type distribution
+resistance_comparison # non-susceptibility in the chosen and overall collections with Fisher exact tests
+mutation_comparison # resistance-associated loci in the chosen and overall collections with Fisher exact tests
+mutation_p_values %>% summarise(loci = n(), p_below_0_05 = sum(fisher_p < 0.05), p_below_0_001 = sum(fisher_p < 0.001)) # loci with differing genotype distributions
+```
+
+```{r reference-coverage}
+# Custom probe set achieved comprehensive coverage of a canonical reference genome
+
+rdna_probe_coverage <- amr_gene_coverage %>%
+  filter(reference_locus %in% c("16S_rDNA", "23S_rDNA")) %>%
+  select(locus, reference_locus, covered_bp, coverage_percent, coverage_status)
+
+length(chosen_genome_ids) # representative genomes used for probe design
+reference_genome_summary # reference genome bases covered by probes
+reference_gene_summary # annotated genes with any, complete, partial, or no probe coverage
+partial_gene_summary # partially covered genes with at least 80 percent probe coverage
+amr_reference_summary # non-rDNA resistance-associated reference loci with probe coverage
+rdna_probe_coverage # 16S and 23S rDNA probe coverage
+setdiff("blaTEM", amr_gene_coverage$reference_locus) # resistance-associated locus without a reference-genome hit
+```
+
+```{r clinical-specimens}
+# Probe capture sequencing recovers Neisseria gonorrhoeae genetic material from clinical specimens
+
+sample_pool_summary <- qcd_data %>%
+  count(pool_level, name = "specimens")
+
+read_count_summary <- qcd_data %>%
+  summarise(
+    initial_reads = sum(initial_total_reads),
+    after_trimming = sum(after_trimming_reads),
+    after_human_removal = sum(after_human_removal_reads),
+    pathogen_mapped = sum(bowtie2_mapped_reads)
+  ) %>%
+  pivot_longer(everything(), names_to = "stage", values_to = "reads")
+
+read_reduction_summary <- qcd_data %>%
+  summarise(
+    specimens_with_fewer_reads_after_trimming = sum(
+      after_trimming_reads < initial_total_reads
+    ),
+    specimens_with_fewer_reads_after_human_removal = sum(
+      after_human_removal_reads < after_trimming_reads
+    ),
+    specimens_with_fewer_pathogen_mapped_reads = sum(
+      bowtie2_mapped_reads < after_human_removal_reads
+    ),
+    total_specimens = n()
+  )
+
+ng_abundance_change <- ng_abund_initial %>%
+  transmute(
+    sample,
+    initial_relative_abundance = relative_abundance
+  ) %>%
+  left_join(
+    qcd_data %>%
+      select(
+        sample,
+        post_capture_relative_abundance = post_map_relative_abundance_1
+      ),
+    by = "sample"
+  )
+
+post_capture_abundance_summary <- qcd_data %>%
+  summarise(
+    median_percent = median(post_map_relative_abundance_1),
+    q1_percent = unname(quantile(post_map_relative_abundance_1, 0.25)),
+    q3_percent = unname(quantile(post_map_relative_abundance_1, 0.75))
+  )
+
+reference_coverage_by_pool <- reference_coverage_summary %>%
+  pivot_longer(
+    cols = starts_with("coverage_"),
+    names_to = "depth_threshold",
+    names_prefix = "coverage_",
+    values_to = "genome_coverage_percent"
+  ) %>%
+  group_by(pool_level, depth_threshold) %>%
+  summarise(
+    median_percent = median(genome_coverage_percent),
+    minimum_percent = min(genome_coverage_percent),
+    maximum_percent = max(genome_coverage_percent),
+    .groups = "drop"
+  )
+
+assembly_qc_by_pool <- qcd_data %>%
+  group_by(pool_level) %>%
+  summarise(
+    passing_assemblies = sum(qc_passing),
+    total_assemblies = n(),
+    .groups = "drop"
+  )
+
+passing_mlst <- mlst_data %>%
+  filter(sample %in% qcd_data_passing$sample)
+
+clinical_sequence_type_summary <- passing_mlst %>%
+  summarise(
+    assemblies = n(),
+    typed_assemblies = sum(!is.na(ST) & ST != "-"),
+    distinct_sequence_types = n_distinct(ST[!is.na(ST) & ST != "-"]),
+    unassigned_assemblies = sum(is.na(ST) | ST == "-")
+  )
+
+detected_amrsearch_genotypes <- amrsearch_gene_data %>%
+  filter(isolate %in% isolates) %>%
+  distinct(genotype_name, entry) %>%
+  arrange(entry, genotype_name)
+
+amrsearch_edge_data <- add_contig_edge_distances(amrsearch_contig_data)
+
+amrsearch_contig_summary <- amrsearch_edge_data %>%
+  summarise(
+    calls = n(),
+    median_contig_bp = median(length),
+    contig_q1_bp = unname(quantile(length, 0.25)),
+    contig_q3_bp = unname(quantile(length, 0.75)),
+    contig_iqr_bp = IQR(length),
+    calls_under_10_kbp = sum(length < 10000),
+    calls_under_10_kbp_percent = 100 * mean(length < 10000)
+  )
+
+amrsearch_edge_summary <- amrsearch_edge_data %>%
+  summarise(
+    calls = n(),
+    median_edge_distance_bp = median(min_dist_to_edge),
+    edge_distance_q1_bp = unname(quantile(min_dist_to_edge, 0.25)),
+    edge_distance_q3_bp = unname(quantile(min_dist_to_edge, 0.75)),
+    edge_distance_iqr_bp = IQR(min_dist_to_edge),
+    calls_under_1_kbp = sum(min_dist_to_edge < 1000),
+    calls_under_1_kbp_percent = 100 * mean(min_dist_to_edge < 1000)
+  )
+
+locus_position_coverage <- coverage_qc %>%
+  group_by(locus, locus_position) %>%
+  summarise(
+    isolates_with_coverage = sum(depth > 0),
+    .groups = "drop"
+  )
+
+locus_coverage_summary <- locus_position_coverage %>%
+  summarise(
+    loci = n_distinct(locus),
+    locus_positions = n(),
+    positions_with_coverage = sum(isolates_with_coverage > 0),
+    positions_with_coverage_percent = 100 * mean(isolates_with_coverage > 0)
+  )
+
+mutation_position_coverage <- mutation_positions %>%
+  left_join(
+    locus_position_coverage,
+    by = c("locus", "locus_position")
+  )
+
+mutation_isolate_coverage <- coverage_qc %>%
+  inner_join(
+    mutation_positions,
+    by = c("locus", "locus_position"),
+    relationship = "many-to-one"
+  )
+
+mutation_coverage_summary <- mutation_position_coverage %>%
+  summarise(
+    database_positions = n(),
+    positions_covered_in_at_least_one_isolate = sum(isolates_with_coverage > 0),
+    positions_covered_in_all_isolates = sum(isolates_with_coverage == length(isolates))
+  ) %>%
+  mutate(
+    isolate_position_observations = nrow(mutation_isolate_coverage),
+    isolate_position_observations_with_coverage = sum(
+      mutation_isolate_coverage$depth > 0
+    ),
+    isolate_position_observations_with_coverage_percent =
+      100 * mean(mutation_isolate_coverage$depth > 0)
+  )
+
+called_locus_coverage_20x <- coverage_breadth_data %>%
+  filter(depth_threshold == 20) %>%
+  semi_join(gene_calls, by = c("isolate", "locus")) %>%
+  summarise(
+    isolate_locus_pairs_at_least_90_percent = sum(percent_coverage >= 90),
+    called_isolate_locus_pairs = n(),
+    percent_at_least_90_percent = 100 * mean(percent_coverage >= 90)
+  )
+
+nrow(qcd_data) # clinical urine specimens
+sample_pool_summary # specimens in low-, medium-, and high-abundance pools
+range(probe_data$enrichment) # qPCR fold enrichment
+read_count_summary # read totals before and after trimming, human-read removal, and pathogen mapping
+read_reduction_summary # specimens losing reads at each processing stage
+ng_abundance_change %>% summarise(increased = sum(post_capture_relative_abundance > initial_relative_abundance), total = n()) # specimens with increased Neisseria gonorrhoeae relative abundance
+post_capture_abundance_summary # post-capture Neisseria gonorrhoeae relative abundance
+reference_coverage_by_pool # genome coverage across read-depth thresholds and abundance pools
+qcd_data %>% summarise(passing_assemblies = sum(qc_passing), total_assemblies = n()) # assemblies approaching the expected genome size
+assembly_qc_by_pool # assemblies approaching the expected genome size by abundance pool
+clinical_sequence_type_summary # assigned and unassigned sequence types among passing assemblies
+detected_amrsearch_genotypes # resistance-associated genes and variants detected with AMRSearch
+amrsearch_contig_summary # AMRSearch genotype-harboring contig sizes
+amrsearch_edge_summary # AMRSearch genotype distance from contig edges
+locus_coverage_summary # Pathogenwatch locus positions with read coverage
+mutation_coverage_summary # Pathogenwatch database positions with read coverage
+called_locus_coverage_20x # AMRSearch-called isolate-locus pairs with at least 90 percent breadth at 20x
+```

@@ -1,0 +1,28 @@
+#!/bin/sh
+#SBATCH --job-name=GeneScreener_PathogenWatch_copy
+#SBATCH --mail-user=kgontjes@umich.edu
+#SBATCH --mail-type=BEGIN,FAIL,END,REQUEUE
+#SBATCH --export=ALL
+#SBATCH --partition=standard
+#SBATCH --account=esnitkin1
+#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=5g --time=0:30:00
+
+## Note: Chang the mail-user, account, Snakemake file, and SBATCH mem/time requirements as you see fit
+
+# Scripts
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/reference_genome/PathogenWatch_gene_detection
+cp -r /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener/config .
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener/GeneScreener.smk . 
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener/GeneScreener_PathogenWatch_FA1090.sbat . 
+cp -r /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener/scripts .
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener/README.md .
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener/LICENSE .
+
+# Results
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection
+cp -r /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener/results/GCF_000006845.1_ASM684v1_genomic_blast_clean.tsv .
+
+# Slurm out
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/reference_genome/PathogenWatch_reference_screening
+cp -r /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener/slurm_out .
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener/slurm-* .

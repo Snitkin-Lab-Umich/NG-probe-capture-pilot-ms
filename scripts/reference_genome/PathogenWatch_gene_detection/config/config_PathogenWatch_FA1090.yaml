@@ -1,0 +1,20 @@
+# General information
+samples: config/sample_PathogenWatch_1090.tsv
+prefix: GeneScreener_PathogenWatch_FA1090
+
+# Input queries directory
+queries: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome
+
+# Data directory
+database_directory: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/database/concatenated_genes
+database_name: PathogenWatch_reference_genes
+
+# Blast parameters
+dbversion: 5 
+dbtype: nucl
+outfmt: "\"6 qseqid sseqid slen length pident nident mismatch gapopen gaps qstart qend sstart send evalue\""
+evalue: 1e-10 
+culling_limit: 1
+
+# R parameters
+directory: /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome/PathogenWatch_gene_detection/GeneScreener

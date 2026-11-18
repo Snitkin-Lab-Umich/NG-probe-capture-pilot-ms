@@ -1,0 +1,14 @@
+# General information
+## Sample list
+samples: config/sample_NG_pilot.tsv
+## Results output folder's name
+prefix: CoverageStats_NG_pilot_PathogenWatch_gene_ermC
+
+# Input fastq directory
+input_reads: /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/fastq
+
+# Bwa parameters
+num_cores: 8
+
+## Reference genome
+reference_genome: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/database/gene_references/ermC.fasta

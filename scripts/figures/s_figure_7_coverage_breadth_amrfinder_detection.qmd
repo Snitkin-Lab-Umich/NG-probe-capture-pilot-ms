@@ -1,0 +1,120 @@
+---
+title: "S Figure 7: clinical_resistance_genotype_coverage_breadth"
+author: "Kyle Gontjes"
+date: today
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ComplexHeatmap")
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+
+# Shared data
+source("./lib/processed_data_functions.R")
+```
+
+# Load coverage data
+```{r}
+load_processed_data(
+  "./data/PathogenWatch_AMR_coverage/curated/pathogenwatch_coverage_data.RDS",
+  "coverage_breadth_data"
+)
+```
+
+# Coverage figure
+```{r}
+# --- locus label cleaning: rDNA -> rRNA gene, underscores -> spaces ----------
+clean_locus <- function(x) {
+  x <- gsub("(16S|23S)_rDNA", "\\1_rRNA_gene", x)  # 16S_rDNA_1 -> 16S_rRNA_gene_1
+  gsub("_", " ", x)
+}
+
+included_loci <- coverage_breadth_data %>%
+  filter(depth_threshold == 1) %>%
+  group_by(locus) %>%
+  summarise(percent_passing = mean(percent_coverage >= 90) * 100, .groups = "drop") %>%
+  filter(percent_passing > 0) %>%
+  select(locus)
+
+coverage_breadth_summary <- coverage_breadth_data %>%
+  group_by(locus, depth_threshold) %>%
+  summarise(
+    percent_passing = mean(percent_coverage >= 90) * 100,
+    n_passing = sum(percent_coverage >= 90),
+    .groups = "drop"
+  ) %>%
+  semi_join(included_loci, by = "locus")
+
+mat_pct <- coverage_breadth_summary %>%
+  select(locus, depth_threshold, percent_passing) %>%
+  pivot_wider(names_from = depth_threshold, values_from = percent_passing) %>%
+  column_to_rownames("locus") %>%
+  as.matrix()
+
+# N isolates passing
+mat_n <- coverage_breadth_summary %>%
+  select(locus, depth_threshold, n_passing) %>%
+  pivot_wider(names_from = depth_threshold, values_from = n_passing) %>%
+  column_to_rownames("locus") %>%
+  as.matrix()
+
+rownames(mat_pct) <- clean_locus(rownames(mat_pct))
+
+s_figure_7 <- Heatmap(mat_pct,
+  name = "Percent_passing",
+  heatmap_legend_param = list(
+    title = "% isolates\n(90% breadth)"
+  ),
+    column_title =  "Read depth threshold",
+    row_title = "AMRSearch genotypes",
+    cluster_rows    = T,
+    cluster_columns = FALSE, 
+    column_title_side = "bottom",
+    row_names_side  = "left",
+    row_names_gp    = gpar(fontsize = 9), 
+    column_names_gp = gpar(fontsize = 9), column_names_rot = 0,
+    rect_gp         = gpar(col = "white", lwd = 1),
+    border          = TRUE,
+    cell_fun = function(j, i, x, y, width, height, fill) {
+        txt_col <- ifelse(mat_pct[i, j] < 50, "white", "black")
+        grid.text(
+            sprintf("%.0f%% (%d)", mat_pct[i, j], mat_n[i, j]),
+            x, y,
+            gp = gpar(fontsize = 7.25, col = txt_col, lineheight = 1)
+        )
+    }
+)
+```
+
+```{r,fig.width=6.75,fig.height=5.4}
+s_figure_7
+```
+
+```{r}
+s_figure_7_final <- grid::grid.grabExpr(draw(s_figure_7))
+
+ggsave("./figures/s_figure_7_clinical_coverage_breadth_resistance_genes.png",plot = s_figure_7_final, dpi=600, width = 6.75, height = 5.4, units='in')
+```

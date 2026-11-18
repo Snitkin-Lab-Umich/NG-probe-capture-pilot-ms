@@ -1,0 +1,28 @@
+#!/bin/bash
+
+#SBATCH --job-name=NG-probe_pilot_strains
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=dhatrib@umich.edu
+#SBATCH --cpus-per-task=1
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --mem-per-cpu=10gb
+#SBATCH --time=2-08:15:00
+#SBATCH --account=esnitkin2
+#SBATCH --partition=standard
+
+# Load necessary modules
+module load Bioinformatics snakemake singularity mamba
+
+
+# Run Snakemake
+snakemake -s workflow/Snakefile_b5.smk -p --use-conda --use-singularity --use-envmodules -j 50 \
+  --cluster "sbatch -A {cluster.account} -p {cluster.partition} -N {cluster.nodes} -t {cluster.walltime} -c {cluster.procs} --mem-per-cpu {cluster.pmem} --output=slurm_out/slurm-%j.out" \
+  --conda-frontend mamba \
+  --keep-going \
+  --cluster-config config/cluster.json \
+  --configfile config/config_pilot_strains.yaml \
+  --latency-wait 100 \
+  --rerun-incomplete \
+  --nolock 
+  

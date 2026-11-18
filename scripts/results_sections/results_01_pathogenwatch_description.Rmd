@@ -1,0 +1,150 @@
+---
+title: "Results section 1"
+author: "Kyle Gontjes & Aryan Singh"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+#knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+
+```{r environment}
+packages <- c("tidyverse")
+invisible(lapply(packages, library, character.only = T, quietly = T))
+
+set.seed(45)
+options(tibble.width = Inf, pillar.sigfig = 6, width = 200)
+
+# Function
+source("./lib/consistent_themes.R")
+source("./lib/processed_data_functions.R")
+source("./scripts/pathogenwatch/01__pathogenwatch_summary_functions.R")
+source("./scripts/PathogenWatch_AMR_coverage/clinical_mutation_functions.R")
+
+# System
+Sys.info()
+sessionInfo()
+```
+
+
+```{r data}
+load_processed_data(
+  "./data/pathogenwatch/curated/pathogenwatch_data.RDS",
+  c(
+    "ng_sample_metadata",
+    "ng_meta",
+    "pathogenwatch_isolate_data",
+    "resistance_variables",
+    "mutation_variables",
+    "chosen_genome_ids"
+  )
+)
+```
+
+# Spatiotemporal data
+```{r}
+paste0("Number of genomes in dataset: ",nrow(ng_sample_metadata))
+
+# Temporal data
+paste0("Temporal data")
+collection_year_summary <- pathogenwatch_isolate_data %>%
+  summarise(
+    genomes_with_year = sum(!is.na(collection_year)),
+    genomes_in_2010s = sum(collection_decade == 2010, na.rm = TRUE),
+    percent_in_2010s = 100 * mean(collection_decade == 2010, na.rm = TRUE),
+    median_year = median(collection_year, na.rm = TRUE),
+    year_q1 = unname(quantile(collection_year, 0.25, na.rm = TRUE)),
+    year_q3 = unname(quantile(collection_year, 0.75, na.rm = TRUE)),
+    missing_year = sum(is.na(collection_year))
+  )
+
+collection_year_summary %>% favorite_kable()
+
+# Location data
+paste0("Location data")
+paste0("Number with continent data: ", sum(is.na(pathogenwatch_isolate_data$collection_continent)==F))
+paste0("Percent with continent data: ", sum(is.na(pathogenwatch_isolate_data$collection_continent)==F)/nrow(pathogenwatch_isolate_data)*100)
+
+paste0("Continent data")
+continent_summary <- pathogenwatch_isolate_data %>%
+  filter(!is.na(collection_continent)) %>%
+  count(collection_continent, sort = TRUE) %>%
+  mutate(percent = 100 * n / sum(n))
+
+continent_summary %>% favorite_kable()
+
+paste0("Country data")
+paste0("Number of represented counties: ",pathogenwatch_isolate_data %>%
+    filter(!is.na(collection_country), collection_country != "Unknown")  %>% .$collection_country %>% n_distinct)
+
+country_summary <- pathogenwatch_isolate_data %>%
+  filter(!is.na(collection_country), collection_country != "Unknown") %>%
+  count(collection_country, sort = TRUE) %>%
+  mutate(percent_all_genomes = 100 * n / nrow(pathogenwatch_isolate_data))
+
+country_summary %>% favorite_kable()
+```
+
+# Sequence type data
+```{r}
+paste0("Number of isolates without ST call: ", sum(is.na(pathogenwatch_isolate_data$sequence_type)))
+
+paste0("Number of ST calls: ", n_distinct(pathogenwatch_isolate_data$sequence_type))
+
+sequence_type_summary <- pathogenwatch_isolate_data %>%
+  filter(!is.na(sequence_type)) %>%
+  count(sequence_type, sort = TRUE) %>%
+  mutate(percent = 100 * n / sum(n))
+
+sequence_type_summary %>% favorite_kable()
+```
+
+
+
+# Resistance data
+## Predicted phenotypes
+```{r}
+resistance_summary <- summarise_resistance(
+  pathogenwatch_isolate_data,
+  isolate_column = "genome_id",
+  resistance_levels = c("RESISTANT", "INTERMEDIATE", "NOT_FOUND"),
+  resistance_columns = resistance_variables
+) %>%
+  filter(value != "NOT_FOUND") %>%
+  group_by(variable) %>%
+  summarise(n = sum(n), percent = sum(perc), .groups = "drop") %>%
+  mutate(variable = as.character(variable)) %>%
+  arrange(match(variable, resistance_variables))
+
+paste0("Resistance data: ")
+resistance_summary %>% favorite_kable()
+```
+
+## Genotype data
+```{r}
+raw_mutation_variables <- setdiff(
+  colnames(ng_meta),
+  c("Isolate", "Genome Name.y", resistance_variables)
+)
+
+paste0("Number of considered genotypes: ",length(raw_mutation_variables))
+
+raw_mutation_variables 
+
+paste0("Number of distinct resistance-associated loci: ", n_distinct(sub("_.*", "", raw_mutation_variables)))
+```
+
+# Genotype and phenotype patterns
+```{r}
+paste0("Distinct raw genotype and resistance patterns: ", ng_meta %>% select(all_of(c(resistance_variables, raw_mutation_variables))) %>% distinct() %>% nrow()) # distinct raw genotype and resistance patterns)
+
+paste0("Distinct gene-grouped genotype and resistance pattern: ", pathogenwatch_isolate_data %>% select(all_of(c(resistance_variables, mutation_variables))) %>% distinct() %>% nrow() ) # distinct gene-grouped genotype and resistance patterns)
+```

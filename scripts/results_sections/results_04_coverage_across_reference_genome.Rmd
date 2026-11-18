@@ -1,0 +1,73 @@
+---
+title: "results_04_coverage_across_reference_genome"
+author: "Kyle Gontjes & Aryan Singh"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+
+```{r environment}
+packages <- c("tidyverse")
+invisible(lapply(packages, library, character.only = T, quietly = T))
+
+set.seed(45)
+options(tibble.width = Inf, pillar.sigfig = 6, width = 200)
+
+# Function
+source("./lib/consistent_themes.R")
+source("./lib/processed_data_functions.R")
+source("./scripts/pathogenwatch/01__pathogenwatch_summary_functions.R")
+source("./scripts/PathogenWatch_AMR_coverage/clinical_mutation_functions.R")
+
+# System
+Sys.info()
+sessionInfo()
+```
+
+```{r}
+load_processed_data(
+  "./data/probe_mapping/curated/probe_mapping_data.RDS",
+  c(
+    "reference_genome_summary",
+    "reference_gene_summary",
+    "partial_gene_summary",
+    "amr_gene_coverage",
+    "amr_reference_summary"
+  )
+)
+```
+
+```{r}
+paste0("Reference genome coverage")
+reference_genome_summary %>% favorite_kable()
+
+paste0("Reference genome gene coverage data: ")
+reference_gene_summary %>% favorite_kable()
+
+paste0("Partial gene coverage: ")
+partial_gene_summary %>% favorite_kable()
+
+paste0("Resistance genome data:")
+amr_gene_coverage %>% favorite_kable()
+
+paste0("Summary data: ")
+amr_reference_summary %>% favorite_kable()
+
+paste0("Focus on rRNA modelcules: ")
+amr_gene_coverage %>%
+  filter(reference_locus %in% c("16S_rDNA", "23S_rDNA")) %>% arrange(reference_locus,-coverage_percent) %>% favorite_kable()
+ 
+ amr_gene_coverage %>%
+  filter(reference_locus %in% c("16S_rDNA", "23S_rDNA")) %>% group_by(reference_locus) %>%  summarise(coverage_percent_range = range(coverage_percent) %>% paste0(collapse='-'),
+                                                                                                      coverage_bp_range = range(covered_bp)%>% paste0(collapse='-')) %>% favorite_kable()
+```

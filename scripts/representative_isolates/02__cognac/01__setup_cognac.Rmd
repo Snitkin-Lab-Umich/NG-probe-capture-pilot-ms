@@ -1,0 +1,81 @@
+---
+title: "setup_cognac"
+author: "Kyle Gontjes"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+knitr::opts_knit$set(echo = TRUE,warning = FALSE, message = FALSE)  
+knitr::opts_knit$set(root.dir="/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/") 
+```
+
+```{r cars}
+library(tidyverse)
+setwd("/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-03_prokka_annotation/results")
+fna_files <- list.files(pattern=".fna",recursive=T)
+gff_files <- list.files(pattern=".gff",recursive=T) 
+saveRDS(fna_files,"/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/data/fna_files.RDS")
+saveRDS(gff_files,"/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/data/gff_files.RDS")
+```
+
+## Including Plots
+```{bash}
+echo "
+# Cognac Run
+# Start Date: 12/17/24
+# Organism: NG
+# Activate
+library(tidyverse)
+library(cognac)
+Sys.info()
+sessionInfo()
+
+setwd('/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/results/')
+
+outDir = '/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/results/'
+
+fnas = readRDS('/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/data/fna_files.RDS')  
+gffs = readRDS('/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/data/gff_files.RDS')  
+
+fasta_files = paste0('/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-03_prokka_annotation/results/',fnas)
+gff_files = paste0('/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-03_prokka_annotation/results/',gffs)
+
+availableCores() 
+
+# Run Conac requiring at least 500 genes are included in the alignment. 
+algnEnv = cognac(
+  fastaFiles = fasta_files ,
+  featureFiles = gff_files,
+  keepTempFiles = TRUE,
+  outDir        = outDir,
+  minGeneNum    = 500,
+  maxMissGenes  = 0.05,
+  threadVal    = 18,
+  njTree     = TRUE
+)
+
+algnEnv\$distMat =CreateAlgnDistMat('/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/results/concatenated_gene_aa_alignment.fasta', 'raw') 
+write.table(algnEnv\$distMat, file='/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/results/distMat.tsv')
+ " > /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/R/cognac.R
+```
+
+```{bash}
+echo "#!/bin/sh
+# Job name
+#SBATCH --job-name=cognac
+# User info
+#SBATCH --mail-user=kgontjes@umich.edu
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --export=ALL
+#SBATCH --partition=largemem
+#SBATCH --account=esnitkin1 
+#SBATCH --nodes=1  --ntasks=1 --cpus-per-task=20 --mem=300g --time=240:00:00
+#SBATCH --output=cognac_slurm.out
+
+R CMD BATCH --no-restore --no-save --quiet /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/R/cognac.R  /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/R/cognac.out
+
+" > /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/sh/cognac.sbat
+```
+

@@ -1,0 +1,206 @@
+---
+title: "S Figure 5: Chosen genome collection overview"
+author: "Kyle Gontjes"
+date: today
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse",'ggtext')
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+
+# Data processing functions
+source("./scripts/pathogenwatch/01__pathogenwatch_summary_functions.R")
+
+# Shared data
+source("./lib/processed_data_functions.R")
+```
+
+# Data
+
+```{r}
+load_processed_data(
+  "./data/pathogenwatch/curated/pathogenwatch_data.RDS",
+  c(
+    "pathogenwatch_isolate_data",
+    "resistance_variables",
+    "mutation_variables"
+  )
+)
+
+chosen_genomes_meta <- pathogenwatch_isolate_data %>%
+  filter(is_chosen)
+```
+
+# global collection (all 32k) redone (01/2026) (supplement)
+
+## year
+
+```{r}
+A <- ggplot(
+  data = chosen_genomes_meta %>% filter(!is.na(collection_year)),
+  aes(x = collection_year)
+) + geom_histogram(fill = "black", stat = "count") +
+  theme_bw_me_large +
+  xlab("Year") +
+  ylab("Isolates") + xlim(NA,2027)
+
+A 
+```
+
+## B. country
+
+```{r}
+chosen_genomes_meta <- chosen_genomes_meta %>%
+  mutate(
+    country_group = ifelse(
+      collection_country %in% names(which(table(collection_country) < 10)),
+      "Other countries",
+      collection_country
+    )
+  )
+
+B <- ggplot(
+    data = chosen_genomes_meta,
+    aes(x = forcats::fct_infreq(country_group))
+) +
+    geom_bar(fill = "black") +
+    theme_bw_me_large +
+    xlab(NULL) +
+    ylab("Isolates")  +
+    theme(axis.text.x = element_text(size = 9.5, angle = 45, hjust = 1)) + geom_text(
+        aes(label = after_stat(count), y = after_stat(count)),
+        size = 4.5,
+        stat = "count",
+        vjust =-0.15,hjust=0,
+        angle=45
+    ) + ylim(NA,ceiling(max(table(chosen_genomes_meta$country_group))/1000)*1000)
+```
+
+## ST
+
+```{r}
+STs_summary <- summarise_sequence_types(
+  chosen_genomes_meta,
+  sequence_type_column = "sequence_type"
+)
+```
+
+## C. Sequence type distribution
+
+```{r}
+C <- ggplot(STs_summary, aes(x = ST_group, y = perc)) +
+  geom_col(color = "black",fill='black', width = 0.8) +
+  geom_text(aes(label = round(n, 1)), nudge_y = 0.125, size = 4, color = "black",
+        vjust =-0.15,hjust=0,
+        angle=45) +
+  theme_bw_me_large +
+  xlab("Sequence type (ST)") +
+  ylab("Percentage (%)") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black"), 
+    legend.position = "none"
+  ) + scale_y_continuous(breaks = scales::pretty_breaks(8),limits = c(NA,(max(STs_summary$perc) %>% round())+1)) + scale_x_discrete(expand = c(0,1))
+
+C
+```
+
+## D. Resistance data
+
+```{r}
+reshaped_resistance_collapsed <- summarise_resistance(
+  chosen_genomes_meta,
+  isolate_column = "genome_id",
+  resistance_levels = resistance_levels,
+  resistance_columns = resistance_variables
+)
+
+D <- ggplot(reshaped_resistance_collapsed, aes(y = variable, fill = value, x = perc)) +
+  geom_histogram(stat = "identity") +
+  Resistance_fill +
+  theme_bw_me_large +
+  labs(y="Antibiotic", x="Percentage (%)") +
+  theme(
+    axis.text.x = element_text(vjust=1, hjust = 0.5), 
+    legend.position = "bottom",
+    legend.direction = "horizontal",
+    legend.margin = margin(t = -5, b = 0),
+    legend.box.margin = margin(t = -5, b = 0),
+  ) +
+  theme_legend_large +
+  guides(
+    fill = guide_legend(
+      title.position = "left",
+      title.hjust = 0.5, 
+      nrow = 1
+    )
+  )
+```
+
+## E. mutational data
+
+```{r}
+reshaped_mutation_gene_collapsed <- summarise_mutation_genes(
+  chosen_genomes_meta,
+  isolate_column = "genome_id",
+  mutation_columns = mutation_variables
+)
+
+
+reshaped_mutation_gene_collapsed$gene_rename <- ifelse(
+    reshaped_mutation_gene_collapsed$gene == "blaTEM",
+    "<i>bla</i><sub>TEM</sub>",
+    paste0("<i>", reshaped_mutation_gene_collapsed$gene, "</i>")
+)
+
+reshaped_mutation_gene_collapsed$gene_rename <- factor(
+reshaped_mutation_gene_collapsed$gene_rename ,levels = reshaped_mutation_gene_collapsed %>% arrange(-n) %>% .$gene_rename)
+
+E <- ggplot(reshaped_mutation_gene_collapsed, aes(x = gene_rename, y = perc)) +
+  geom_col(fill = "black") +
+  theme_bw_me_large +
+  xlab("Gene") +
+  ylab("Percent with genotype (%)") +
+  geom_text(aes(label = n), size = 3.5, nudge_y = 4, angle = 45) +
+  theme(axis.text.x = element_markdown(size = 12, angle = 45, hjust = 1)) 
+
+E 
+```
+ 
+## combine
+```{r,fig.width=17,fig.height=17}
+AB_aligned <- cowplot::align_plots(A, B)
+AB2_cow <- cowplot::plot_grid(AB_aligned[[1]],AB_aligned[[2]], labels = c("A", "B"))
+C23_cow <- cowplot::plot_grid(C, ncol = 1, labels = c("C"))
+DE_cow <- cowplot::plot_grid(D, E, ncol = 2, labels = c("D", "E"))
+s_figure_5 <- cowplot::plot_grid(AB2_cow, C23_cow, DE_cow, ncol = 1)
+```
+
+## save
+```{r}
+ggsave(filename = "./figures/s_figure_5_chosen_genome_collection_overview.png",plot=s_figure_5,dpi=600,width = 16, height=16,bg='white')
+```
+ 

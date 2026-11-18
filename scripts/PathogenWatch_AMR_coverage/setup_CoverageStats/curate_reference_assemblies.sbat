@@ -1,0 +1,16 @@
+#!/bin/sh
+#SBATCH --job-name=curate_reference_assemblies_for_gene_coverage_stats
+#SBATCH --mail-user=kgontjes@umich.edu
+#SBATCH --mail-type=BEGIN,FAIL,END,REQUEUE
+#SBATCH --export=ALL
+#SBATCH --partition=standard
+#SBATCH --account=esnitkin1
+#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=20g --time=2:00:00
+
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/database/gene_references
+
+for i in $(ls *.fasta)
+do 
+    echo $i
+    bash /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/index_reference_genome.sh $i
+done

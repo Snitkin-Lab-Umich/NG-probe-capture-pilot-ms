@@ -1,0 +1,393 @@
+---
+title: "S Figure 6: Chosen_genome_PathogenWatch_comparison"
+author: "Kyle Gontjes"
+date: today
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ggtext")
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+
+# Data processing functions
+source("./scripts/pathogenwatch/01__pathogenwatch_summary_functions.R")
+
+# Shared data
+source("./lib/processed_data_functions.R")
+```
+
+# Data
+
+```{r}
+load_processed_data(
+  "./data/pathogenwatch/curated/pathogenwatch_data.RDS",
+  c(
+    "pathogenwatch_isolate_data",
+    "resistance_variables",
+    "mutation_variables"
+  )
+)
+ 
+ng_overall_meta <- pathogenwatch_isolate_data %>%
+  mutate(study = "Overall")
+
+ng_chosen_meta <- pathogenwatch_isolate_data %>%
+  filter(is_chosen) %>%
+  mutate(study = "Chosen")
+
+ng_overlay_meta <- bind_rows(ng_overall_meta, ng_chosen_meta)
+```
+
+# overlay plot with * for significance
+
+```{r}
+
+# decade
+
+decade_overlay <- ng_overlay_meta %>%
+  filter(!is.na(collection_decade)) %>%
+  count(collection_decade, study) %>%
+  group_by(study) %>%
+  mutate(perc = 100 * n / sum(n)) %>%
+  ungroup()
+
+decade_pvals <- lapply(sort(unique(ng_overlay_meta$collection_decade[!is.na(ng_overlay_meta$collection_decade)])), function(d) {
+  tmp <- ng_overlay_meta %>% filter(!is.na(collection_decade))
+  in_group <- tmp$collection_decade == d
+  tbl <- table(
+    factor(in_group, levels = c(FALSE, TRUE)),
+    factor(tmp$study, levels = c("Overall", "Chosen"))
+  )
+  data.frame(collection_decade = d, p_value = fisher.test(tbl)$p.value)
+}) %>% dplyr::bind_rows()
+
+decade_overlay <- left_join(decade_overlay, decade_pvals, by = "collection_decade")
+
+A_overlay <- ggplot(decade_overlay,
+                    aes(x = factor(collection_decade),
+                        y = perc,
+                        fill = study)) +
+  geom_col(position = position_dodge(0.9)) +
+  geom_text(
+    data = decade_overlay %>%
+      group_by(collection_decade) %>%
+      slice_max(perc, n = 1) %>%
+      filter(p_value < 0.05),
+    aes(label = "*"),
+    position = position_dodge(0.9),
+    vjust = -0.6,
+    size = 5
+  ) +
+  study_fill_scale +
+  theme_bw_me +
+  xlab("Decade") +
+  ylab("Percentage (%)")
+```
+
+```{r}
+# continent
+continent_overlay <- ng_overlay_meta %>%
+  filter(!is.na(collection_continent)) %>%
+  count(collection_continent, study) %>%
+  group_by(study) %>%
+  mutate(perc = 100 * n / sum(n)) %>%
+  ungroup()
+
+continent_pvals <- lapply(sort(unique(ng_overlay_meta$collection_continent[!is.na(ng_overlay_meta$collection_continent)])), function(ct) {
+  tmp <- ng_overlay_meta %>% filter(!is.na(collection_continent))
+  in_group <- tmp$collection_continent == ct
+  tbl <- table(
+    factor(in_group, levels = c(FALSE, TRUE)),
+    factor(tmp$study, levels = c("Overall", "Chosen"))
+  )
+  data.frame(collection_continent = ct, p_value = fisher.test(tbl)$p.value)
+}) %>% dplyr::bind_rows()
+
+continent_overlay <- left_join(continent_overlay,
+                               continent_pvals,
+                               by = "collection_continent")
+
+continent_order <- continent_overlay %>%
+  filter(study == "Overall") %>%
+  arrange(desc(perc)) %>%
+  pull(collection_continent)
+
+continent_overlay$collection_continent <- factor(
+  continent_overlay$collection_continent,
+  levels = continent_order
+)
+
+B_overlay <- ggplot(continent_overlay,
+                    aes(x = reorder(collection_continent, -perc),
+                        y = perc,
+                        fill = study)) +
+  geom_col(position = position_dodge(0.9)) +
+  geom_text(
+    data = continent_overlay %>%
+      group_by(collection_continent) %>%
+      slice_max(perc, n = 1) %>%
+      filter(p_value < 0.05),
+    aes(label = "*"),
+    position = position_dodge(0.9),
+    vjust = -0.6,
+    size = 5
+  ) +
+  study_fill_scale +
+  theme_bw_me +
+  xlab("Continent") +
+  ylab("Percentage (%)") +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust=0.5)) + scale_y_continuous(breaks = c(0,10,20,30,40,50),limits = c(NA,(ceiling(max(continent_overlay$perc) /10)*10+3)))
+```
+
+```{r}
+# ST (major only)
+sequence_types <- ng_overlay_meta %>%
+  filter(!is.na(sequence_type)) %>%
+  count(sequence_type, name = "n") %>%
+  mutate(perc = 100 * n / sum(n)) %>%
+  arrange(desc(n))
+
+N_TOP <- 51
+top_sequence_types <- sequence_types %>%
+  slice_head(n = N_TOP) %>%
+  pull(sequence_type)
+
+st_overlay <- ng_overlay_meta %>%
+  filter(!is.na(sequence_type), sequence_type %in% top_sequence_types) %>%
+  count(sequence_type, study) %>%
+  group_by(study) %>%
+  mutate(perc = 100 * n / sum(n)) %>%
+  ungroup()
+
+st_pvals <- lapply(sort(unique(ng_overlay_meta$sequence_type[!is.na(ng_overlay_meta$sequence_type) & ng_overlay_meta$sequence_type %in% top_sequence_types])), function(s) {
+  tmp <- ng_overlay_meta %>%
+    filter(!is.na(sequence_type), sequence_type %in% top_sequence_types)
+  in_group <- tmp$sequence_type == s
+  tbl <- table(
+    factor(in_group, levels = c(FALSE, TRUE)),
+    factor(tmp$study, levels = c("Overall", "Chosen"))
+  )
+  data.frame(sequence_type = s, p_value = fisher.test(tbl)$p.value)
+}) %>% dplyr::bind_rows()
+
+st_overlay <- left_join(st_overlay, st_pvals, by = "sequence_type")
+
+st_order <- st_overlay %>%
+  filter(study == "Overall") %>%
+  arrange(desc(perc)) %>%
+  pull(sequence_type)
+
+st_overlay$sequence_type <- factor(st_overlay$sequence_type, levels = st_order)
+
+C_overlay <- ggplot(st_overlay,
+                    aes(x = reorder(sequence_type, -perc),
+                        y = perc,
+                        fill = study)) +
+  geom_col(position = position_dodge(0.9)) +
+  geom_text(
+    data = st_overlay %>%
+      group_by(sequence_type) %>%
+      slice_max(perc, n = 1) %>%
+      filter(p_value < 0.05),
+    aes(label = "*"),
+    position = position_dodge(0.9),
+    vjust = -0.6,
+    size = 5
+  ) +
+  study_fill_scale +
+  theme_bw_me +
+  xlab("Sequence type") +
+  ylab("Percentage (%)") +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust=0.5))
+```
+
+```{r}
+# resistance pheno
+res_overlay <- ng_overlay_meta %>%
+  select(genome_id, study, all_of(resistance_variables)) %>%
+  pivot_longer(cols = all_of(resistance_variables),
+               names_to = "Antibiotic",
+               values_to = "Status") %>%
+  mutate(binary = Status != "NOT_FOUND") %>%
+  group_by(Antibiotic, study) %>%
+  summarise(perc = 100 * mean(binary),
+            .groups = "drop")
+
+res_pvals <- lapply(resistance_variables, function(x) {
+  tmp <- ng_overlay_meta %>%
+    mutate(binary = .data[[x]] != "NOT_FOUND")
+  tbl <- table(
+    factor(tmp$binary, levels = c(FALSE, TRUE)),
+    factor(tmp$study, levels = c("Overall", "Chosen"))
+  )
+  data.frame(
+    Antibiotic = x,
+    p_value = fisher.test(tbl)$p.value
+  )
+}) %>% dplyr::bind_rows()
+
+res_overlay <- left_join(res_overlay, res_pvals, by = "Antibiotic")
+
+res_order <- res_overlay %>%
+  filter(study == "Overall") %>%
+  arrange(desc(perc)) %>%
+  pull(Antibiotic)
+
+res_overlay$Antibiotic <- factor(res_overlay$Antibiotic, levels = res_order)
+
+D_overlay <- ggplot(res_overlay,
+                    aes(x = reorder(Antibiotic, -perc),
+                        y = perc,
+                        fill = study)) +
+  geom_col(position = position_dodge(0.9)) +
+  geom_text(
+    data = res_overlay %>%
+      group_by(Antibiotic) %>%
+      slice_max(perc, n = 1) %>%
+      filter(p_value < 0.05),
+    aes(label = "*"),
+    position = position_dodge(0.9),
+    vjust = -0.6,
+    size = 5
+  ) +
+  study_fill_scale +
+  theme_bw_me +
+  xlab("Antibiotic") +
+  ylab("Resistance (%)") +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust=0.5))
+```
+
+```{r}
+# genotype
+mut_overlay <- ng_overlay_meta %>%
+  select(genome_id, study, all_of(mutation_variables)) %>%
+  pivot_longer(cols = all_of(mutation_variables),
+               names_to = "Genotype",
+               values_to = "Presence") %>%
+  mutate(Presence = as.numeric(as.character(Presence))) %>%
+  group_by(Genotype, study) %>%
+  summarise(perc = 100 * mean(Presence),
+            .groups = "drop")
+
+mut_pvals <- lapply(mutation_variables, function(x) {
+  tmp <- ng_overlay_meta %>%
+    mutate(binary = as.numeric(.data[[x]]) > 0)
+  tbl <- table(
+    factor(tmp$binary, levels = c(FALSE, TRUE)),
+    factor(tmp$study, levels = c("Overall", "Chosen"))
+  )
+  data.frame(
+    Genotype = x,
+    p_value = fisher.test(tbl)$p.value
+  )
+}) %>% dplyr::bind_rows()
+ 
+## derive locus from genotype name
+mut_overlay_locus <- mut_overlay %>%
+  mutate(Locus = sub("_.*", "", Genotype)) %>%
+  group_by(Locus, study) %>%
+  summarise(
+    perc = mean(perc),
+    .groups = "drop"
+  )
+
+mut_pvals_locus <- lapply(unique(mut_overlay_locus$Locus), function(lc){
+
+  tmp <- ng_overlay_meta %>%
+    select(genome_id, study, all_of(mutation_variables)) %>%
+    pivot_longer(cols = all_of(mutation_variables),
+                 names_to = "Genotype",
+                 values_to = "Presence") %>%
+    mutate(
+      Locus = sub("_.*", "", Genotype),
+      Presence = as.numeric(as.character(Presence))
+    ) %>%
+    group_by(genome_id, study, Locus) %>%
+    summarise(binary = any(Presence > 0),
+              .groups = "drop") %>%
+    filter(Locus == lc)
+
+  tbl <- table(
+    factor(tmp$binary, levels = c(FALSE, TRUE)),
+    factor(tmp$study, levels = c("Overall", "Chosen"))
+  )
+
+  data.frame(
+    Locus = lc,
+    p_value = fisher.test(tbl)$p.value
+  )
+
+}) %>% dplyr::bind_rows()
+
+mut_overlay_locus <- left_join(mut_overlay_locus,
+                               mut_pvals_locus,
+                               by = "Locus")
+
+mut_overlay_locus$Locus <-  paste0("<i>",mut_overlay_locus$Locus,"</i>") %>% gsub("<i>blaTEM</i>","<i>bla</i><sub>TEM</sub>",.)
+
+locus_order <- mut_overlay_locus %>%
+  filter(study == "Overall") %>%
+  arrange(desc(perc)) %>%
+  pull(Locus)
+
+mut_overlay_locus$Locus <- factor(mut_overlay_locus$Locus, levels = locus_order)
+
+E_overlay <- ggplot(mut_overlay_locus,
+                    aes(x = Locus,
+                        y = perc,
+                        fill = study)) +
+  geom_col(position = position_dodge(0.9)) +
+  geom_text(
+    data = mut_overlay_locus %>%
+      group_by(Locus) %>%
+      slice_max(perc, n = 1) %>%
+      filter(p_value < 0.05),
+    aes(label = "*"),
+    position = position_dodge(0.9),
+    vjust = -0.6,
+    size = 5
+  ) +
+  study_fill_scale +
+  theme_bw_me +
+  xlab("Genetic locus") +
+  ylab("Presence (%)") +
+  theme(axis.text.x = element_markdown(angle = 90,hjust = 1,vjust=0.5))
+```
+
+```{r,fig.width=8.5,fig.height=8.5}
+# combine
+overlay_figure_star <- cowplot::plot_grid(
+  cowplot::plot_grid(A_overlay + theme(legend.position='none'), B_overlay + theme(legend.position='none'),D_overlay + theme(legend.position='none'), labels = c("A","B","D"),rel_widths = c(1,0.5,0.5),ncol=3),
+  cowplot::plot_grid(C_overlay + theme(legend.position='none'), labels = c("C"),rel_widths = c(1)),
+  cowplot::plot_grid(E_overlay, labels = "E"), # swap all muts to bottom, grouped muts to top
+  ncol = 1
+)
+```
+
+```{r}
+ggsave(filename = "./figures/s_figure_6_chosen_genome_PathogenWatch_comparison.png",plot=overlay_figure_star,dpi=600,width = 8.5,height=8.5,bg='white')
+```
+ 

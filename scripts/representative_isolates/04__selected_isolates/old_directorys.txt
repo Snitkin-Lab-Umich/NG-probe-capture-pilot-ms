@@ -1,0 +1,8 @@
+01__iso_sel.Rmd
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2025-02-24_selected_isolates/analysis/iso_sel.Rmd
+
+02__copy_fastas.R
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2025-02-24_selected_isolates/scripts/copy_fastas.R
+
+03__cp_bash.sh
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2025-02-24_selected_isolates/scripts/cp_bash.sh

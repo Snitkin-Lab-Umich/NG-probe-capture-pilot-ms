@@ -1,0 +1,329 @@
+---
+title: "figure_4_pathogenwatch_clinical_resistance_genotype_detection"
+author: "Aryan Singh"
+date: today
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+packages <- c("tidyverse", "ComplexHeatmap", "cowplot", "grid") 
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+source("./lib/consistent_themes.R")
+source("./lib/processed_data_functions.R")
+source("./scripts/PathogenWatch_AMR_coverage/clinical_mutation_functions.R")
+```
+
+# Load AMRSearch data
+
+```{r}
+load_processed_data(
+    "./data/PathogenWatch_AMR_coverage/curated/pathogenwatch_coverage_data.RDS",
+    c("coverage_qc", "clinical_locus_coverage")
+)
+load_processed_data(
+    "./data/amrsearch_10_20_2026_probes/curated/amrsearch_data.RDS",
+    c("amrsearch_matrix", "amrsearch_contig_data", "amrsearch_genotype_data")
+)
+load_processed_data(
+    "./data/PathogenWatch_AMR_coverage/curated/pathogenwatch_mutation_data.RDS",
+    "amr_df"
+)
+```
+
+# Figure A: AMRSearch data
+
+```{r}
+amrsearch_matrix_plot <- amrsearch_matrix
+
+genotype_columns <- colnames(amrsearch_matrix_plot)[
+    colnames(amrsearch_matrix_plot) %in% amrsearch_genotype_data$genotype_name
+]
+gene_annotation_dataset <- tibble(genotype_name = genotype_columns) %>%
+    left_join(
+        amrsearch_genotype_data,
+        by = "genotype_name"
+    ) %>%
+    mutate(genotype_type = recode(entry, gene = "Gene", variant = "Mutation"))
+
+colors_choice <- hues::iwanthue(sum(n_distinct(amrsearch_matrix_plot$ST), n_distinct(gene_annotation_dataset$genotype_type)))
+ST_colors <- setNames(colors_choice[1:n_distinct(amrsearch_matrix_plot$ST)], sort(unique(amrsearch_matrix_plot$ST)))
+category_colors <- setNames(colors_choice[(length(ST_colors)+1):length(colors_choice)], sort(unique(gene_annotation_dataset$genotype_type)))
+
+rowannotations <- rowAnnotation(Pool = amrsearch_matrix_plot$pool_level,
+                                ST = amrsearch_matrix_plot$ST,
+                                col = list(Pool = pool_colors,
+                                           ST = ST_colors),annotation_name_side = "top")
+
+colannots <- columnAnnotation(Type = gene_annotation_dataset$genotype_type, 
+                                col = list(Type = category_colors))
+
+A <- ComplexHeatmap::Heatmap(amrsearch_matrix_plot %>% select(all_of(genotype_columns)) %>% as.matrix(),
+                        right_annotation = rowannotations,
+                        col=c('white','black'),
+                        column_title = "AMRSearch genotypes",
+                        
+    row_names_gp    = gpar(fontsize = 9), 
+                        column_names_gp = gpar(fontsize = 9),
+                         heatmap_legend_param = list(
+          at = c(1, 0),                      
+          labels = c("Present", "Absent") 
+        ),
+                        show_row_names = F,
+                        bottom_annotation = colannots,
+                        name = "Genotype" 
+        )
+```
+
+# B: Contig data
+
+```{r}
+amrsearch_w_contig_data <- amrsearch_contig_data
+ 
+median(amrsearch_w_contig_data$length)
+IQR(amrsearch_w_contig_data$length)
+table(amrsearch_w_contig_data$length <= 10000) 
+sum(amrsearch_w_contig_data$length <10000)
+
+sum(amrsearch_w_contig_data$length <10000) / nrow(amrsearch_w_contig_data)
+
+B <- ggplot(data = amrsearch_w_contig_data, aes(x = reorder(label, -length, median), y = length)) +
+    geom_boxplot() +   theme_bw_me  +
+    scale_y_continuous(breaks = scales::pretty_breaks(10)) +
+    labs(x = "AMRSearch genotype", y = "Contig size (bp)") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + geom_jitter(width = 0.3,height = 0,size = 1)
+```
+
+# C: Distance to contig barriers
+
+```{r}
+median(amrsearch_w_contig_data$min_dist_to_edge)
+IQR(amrsearch_w_contig_data$min_dist_to_edge)
+table(amrsearch_w_contig_data$min_dist_to_edge <= 10000)
+table(amrsearch_w_contig_data$min_dist_to_edge <= 1000)
+
+C <- ggplot(data = amrsearch_w_contig_data, aes(x = reorder(label, -min_dist_to_edge, median), y = min_dist_to_edge)) +
+    geom_boxplot() + theme_bw_me +
+    scale_y_continuous(breaks = scales::pretty_breaks(10)) +
+    labs(x = "AMRSearch genotype", y = "Distance from\ncontig edge (bp)") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + geom_jitter(width = 0.3,height = 0,size = 1)
+```
+
+# D: Chromosome-normalized coverage across all reference genes
+
+```{r}
+# median nonzero depth; show zero when no isolate has coverage
+stats <- coverage_qc %>%
+    group_by(locus, locus_position) %>%
+    summarise(
+        median_normalized_depth = if (any(normalized_depth > 0)) {
+            median(normalized_depth[normalized_depth > 0])
+        } else 0,
+        .groups = "drop"
+    ) %>%
+    mutate(locus = fct_rev(factor(locus)))
+```
+
+```{r}
+locus_labels <- format_pathogenwatch_loci(stats$locus)
+renamed <- locus_labels$renamed
+locus_levels <- locus_labels$locus_levels
+```
+
+```{r}
+stats <- stats %>% mutate(locus_rename = renamed[as.character(locus)]) %>% mutate(locus_rename = factor(locus_rename,levels = locus_levels))
+
+combo_genes <- stats %>%
+    distinct(locus, locus_rename) %>%
+    arrange(desc(locus_rename))
+combo_positions <- seq_len(max(stats$locus_position))
+combo_matrix <- matrix(NA_real_, nrow(combo_genes), length(combo_positions),
+                       dimnames = list(as.character(combo_genes$locus), combo_positions))
+combo_matrix[cbind(match(stats$locus, combo_genes$locus), stats$locus_position)] <- stats$median_normalized_depth
+combo_lengths <- vapply(combo_genes$locus, function(g) max(stats$locus_position[stats$locus == g]), numeric(1))
+combo_boxes <- lapply(combo_genes$locus, function(g) {
+    clinical_locus_coverage$normalized_depth[clinical_locus_coverage$locus == g]
+})
+# keep zero visible and compress the upper tail
+combo_box_scale <- scales::pseudo_log_trans(sigma = 0.1, base = 10)
+combo_box_ticks <- c(0, 0.1, 0.5, 1, 2, 5, 10, 50)
+combo_boxes_scaled <- lapply(combo_boxes, combo_box_scale$transform)
+
+combo_markers <- matrix(FALSE, nrow(combo_matrix), ncol(combo_matrix))
+combo_marker_positions <- amr_df %>%
+    filter(gene %in% combo_genes$locus, !is.na(position_gene_aware)) %>%
+    distinct(gene, position_gene_aware)
+combo_markers[cbind(match(combo_marker_positions$gene, combo_genes$locus),
+                    combo_marker_positions$position_gene_aware)] <- TRUE
+combo_color_max <- 2
+combo_colors <- pathogenwatch_coverage_color_fun
+
+combo_annotation <- rowAnnotation(
+    coverage = anno_boxplot(combo_boxes_scaled, width = unit(7, "cm"),
+                            gp = gpar(fill = "grey90"), box_width = 0.55,
+                            add_points = TRUE, size = unit(0.7, "mm"),
+                            axis_param = list(side = "bottom", labels_rot = 0,
+                                              at = combo_box_scale$transform(combo_box_ticks),
+                                              labels = combo_box_ticks, gp = gpar(fontsize = 7))),
+    annotation_label = "Median nonzero normalized depth\n(log scale)",
+    annotation_name_side = "bottom", annotation_name_rot = 0,
+    annotation_name_gp = gpar(fontsize = 8)
+)
+
+D_heatmap <- Heatmap(
+    combo_matrix, name = "position_depth", col = combo_colors, na_col = "white",
+    cluster_rows = FALSE, cluster_columns = FALSE,
+    show_row_names = TRUE, row_names_side = "left",
+    row_labels = gsub("_", " ", combo_genes$locus), row_names_gp = gpar(fontsize = 8),
+    show_column_names = TRUE,
+    column_labels = ifelse(combo_positions == 1 | combo_positions %% 1000 == 0, combo_positions, ""),
+    column_names_rot = 0, column_names_gp = gpar(fontsize = 7),
+    column_title = "Position (bp)", column_title_side = "bottom",
+    column_title_gp = gpar(fontsize = 9),
+    right_annotation = combo_annotation, show_heatmap_legend = FALSE,
+    use_raster = TRUE, raster_device = "agg_png", raster_by_magick = FALSE,
+    layer_fun = function(j, i, x, y, width, height, fill) {
+        first <- j == 1
+        grid.rect(x = unit(combo_lengths[i[first]] / ncol(combo_matrix) / 2, "npc"),
+                  y = y[first], width = unit(combo_lengths[i[first]] / ncol(combo_matrix), "npc"),
+                  height = height[first], gp = gpar(fill = NA, col = "black", lwd = 0.7))
+        marked <- combo_markers[cbind(i, j)]
+        grid.points(x[marked], y[marked], pch = 1, size = unit(1.4, "mm"),
+                    gp = gpar(col = "black"))
+    }
+)
+
+combo_legend <- packLegend(
+    Legend(title = "Median nonzero\nchromosome-normalized depth", col_fun = combo_colors,
+           at = c(0, 0.5, 1, 1.5, combo_color_max),
+           labels = c("0", "0.5", "1", "1.5", "2+"),
+           title_gp = gpar(fontsize = 7), labels_gp = gpar(fontsize = 7),
+           legend_height = unit(3, "cm"), grid_width = unit(2, "mm")),
+    Legend(labels = "Pathogenwatch mutation", type = "points", pch = 1,
+           labels_gp = gpar(fontsize = 7), size = unit(1.4, "mm")),
+    gap = unit(2, "mm")
+)
+
+D <- grid::grid.grabExpr({
+    draw(D_heatmap, padding = unit(c(4, 2, 2, 2), "mm"),
+         heatmap_legend_list = list(combo_legend), heatmap_legend_side = "right")
+    decorate_annotation("coverage", {
+        row_edges <- seq_len(nrow(combo_matrix) - 1) / nrow(combo_matrix)
+        grid.segments(x0 = unit(0, "npc"), x1 = unit(1, "npc"),
+                      y0 = unit(row_edges, "npc"), y1 = unit(row_edges, "npc"),
+                      gp = gpar(col = "grey85", lty = "dashed", lwd = 0.6))
+        grid.lines(x = unit(rep(combo_box_scale$transform(1), 2), "native"), y = unit(c(0, 1), "npc"),
+                   gp = gpar(col = "grey30", lty = "dashed", lwd = 1))
+    })
+}, width = 10, height = 5.5)
+```
+
+# E: Chromosome-normalized coverage at Pathogenwatch mutations
+
+```{r}
+mutations_without_position <- amr_df %>%
+    filter(is.na(position_gene_aware)) %>%
+    select(gene, variant)
+mutations_without_position
+
+mutation_positions <- amr_df %>%
+    filter(!is.na(position_gene_aware)) %>%
+    mutate(
+        locus = gene,
+        mutation_site = case_when(
+            !is.na(ref) ~ paste0(ref, abs(position)),
+            mut_type %in% c("AA_insertion", "insertion") ~ paste0("ins", abs(position)),
+            TRUE ~ as.character(abs(position))
+        ),
+        locus_position = position_gene_aware
+    ) %>%
+    group_by(locus, locus_position) %>%
+    summarise(
+        mutation_site = dplyr::first(mutation_site),
+        variants = paste(sort(unique(variant)), collapse = ", "),
+        .groups = "drop"
+    ) %>%
+    mutate(mutation = paste(gsub("_", " ", locus), mutation_site, "mutant")) %>%
+    arrange(locus, locus_position)
+
+# include zero depths, regardless of gene or mutation call
+mutation_coverage <- coverage_qc %>%
+    select(isolate, locus, locus_position, normalized_depth) %>%
+    inner_join(mutation_positions, by = c("locus", "locus_position"),
+               relationship = "many-to-one")
+stopifnot(
+    setequal(mutation_coverage$mutation, mutation_positions$mutation),
+    !anyDuplicated(mutation_coverage[c("isolate", "mutation")])
+)
+
+mutation_coverage_summary <- mutation_positions %>%
+    left_join(
+        mutation_coverage %>%
+            group_by(mutation) %>%
+            summarise(n = n_distinct(isolate[normalized_depth > 0]),
+                      median_normalized_depth = median(normalized_depth),
+                      .groups = "drop"),
+        by = "mutation"
+    ) %>%
+    mutate(n = replace_na(n, 0L))
+
+# order genes by the mean of their site medians, then sites by median
+mutation_group_order <- mutation_coverage_summary %>%
+    group_by(locus) %>%
+    summarise(group_median = mean(median_normalized_depth, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(group_median), locus)
+
+mutation_coverage_summary <- mutation_coverage_summary %>%
+    mutate(group_order = match(locus, mutation_group_order$locus)) %>%
+    arrange(group_order, desc(median_normalized_depth), locus_position, mutation)
+
+mutation_coverage <- mutation_coverage %>%
+    mutate(mutation = factor(mutation, levels = mutation_coverage_summary$mutation))
+
+mutation_labels <- setNames(
+    paste0(gsub("_", " ", mutation_coverage_summary$mutation),
+           " (n=", mutation_coverage_summary$n, ")"),
+    mutation_coverage_summary$mutation
+)
+
+E <- ggplot(mutation_coverage, aes(x = mutation, y = normalized_depth)) +
+    geom_hline(yintercept = 1, colour = "grey30", linetype = "dashed", linewidth = 0.4) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(width = 0.2, height = 0, size = 0.8) +
+    theme_bw_me +
+    scale_x_discrete(drop = FALSE, labels = mutation_labels) +
+    scale_y_continuous(breaks = scales::pretty_breaks(6)) +
+    labs(x = "Pathogenwatch database mutation",
+         y = "Chromosome-normalized\nposition depth") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7))
+```
+
+# combine
+```{r,fig.width=10,fig.height=19}
+A_fig <- grid::grid.grabExpr(draw(A)) 
+BC_figure <- cowplot::plot_grid(B,C,ncol=2,labels = c("B","C")) 
+figure4 <- cowplot::plot_grid(A_fig,BC_figure,D,E,ncol=1,labels = c("A","","D","E"),rel_heights = c(0.8,0.75,1,0.9))
+figure4
+```
+
+# save
+```{r}
+ggsave("./figures/figure_4_pathogenwatch_clinical_resistance_genotype_detection.png",plot = figure4,dpi=900,width = 10,height = 19,units='in')
+```
+ 

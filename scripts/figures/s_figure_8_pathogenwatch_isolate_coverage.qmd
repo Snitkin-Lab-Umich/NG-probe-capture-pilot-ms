@@ -1,0 +1,204 @@
+---
+title: "S Figure 8: Pathogenwatch isolate level data"
+date: today
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+packages <- c("tidyverse", "ComplexHeatmap", "cowplot", "grid")
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+source("./lib/consistent_themes.R")
+source("./lib/processed_data_functions.R")
+source("./scripts/PathogenWatch_AMR_coverage/clinical_mutation_functions.R")
+
+load_processed_data(
+    "./data/PathogenWatch_AMR_coverage/curated/pathogenwatch_coverage_data.RDS",
+    c(
+        "isolates", "coverage_qc", "clinical_locus_coverage",
+        "isolate_metadata", "locus_metadata"
+    )
+)
+
+load_processed_data(
+    "./data/amrsearch_10_20_2026_probes/curated/amrsearch_data.RDS",
+    "gene_calls"
+)
+load_processed_data(
+    "./data/PathogenWatch_AMR_coverage/curated/pathogenwatch_mutation_data.RDS",
+    c("amr_df", "mutation_positions")
+)
+
+figure_prefix <- "./figures/s_figure_8_pathogenwatch_isolate_coverage"
+dir.create(dirname(figure_prefix), recursive = TRUE, showWarnings = FALSE)
+
+# display-only rename: rDNA -> rRNA gene (keeps raw locus IDs for matching)
+rrna_display <- function(x) {
+    x <- gsub("16S_rDNA", "16S_rRNA_gene", x)
+    gsub("23S_rDNA", "23S_rRNA_gene", x)
+}
+
+isolate_info <- isolate_metadata %>%
+    transmute(
+        isolate,
+        sample_id,
+        pool_id,
+        pool_level,
+        panel_title = paste0(isolate, "\nPool ", pool_id, " (", pool_level, ")")
+    )
+stopifnot(nrow(isolate_info) == 9, !anyNA(isolate_info$pool_id))
+stopifnot(length(isolates) == 9, n_distinct(coverage_qc$locus) == 35,
+          !anyDuplicated(coverage_qc[c("isolate", "locus", "locus_position")]),
+          !anyNA(coverage_qc$locus_position), all(is.finite(coverage_qc$normalized_depth)),
+          all(coverage_qc$normalized_depth >= 0))
+
+# order panels by pool concentration (High -> Medium -> Low), then isolate
+pool_order <- c("High", "Medium", "Low")
+stopifnot(all(isolate_info$pool_level %in% pool_order))
+ordered_isolates <- isolate_info$isolate[order(
+    factor(isolate_info$pool_level, levels = pool_order),
+    isolate_info$isolate
+)]
+stopifnot(setequal(ordered_isolates, isolates))
+
+# same locus order as figure 4d
+loci <- sort(unique(coverage_qc$locus))
+formatted_locus_labels <- format_pathogenwatch_loci(loci)
+renamed <- unname(formatted_locus_labels$renamed[loci])
+ordered_loci <- loci[order(renamed)]
+locus_lengths <- setNames(
+    locus_metadata$locus_length,
+    locus_metadata$locus
+)[ordered_loci]
+locus_positions <- seq_len(max(locus_lengths))
+stopifnot(all(count(coverage_qc, isolate)$n == sum(locus_lengths)),
+          all(count(coverage_qc, isolate, locus)$n ==
+              locus_lengths[count(coverage_qc, isolate, locus)$locus]))
+```
+
+```{r}
+stopifnot(all(mutation_positions$locus %in% ordered_loci),
+          all(mutation_positions$locus_position > 0),
+          all(mutation_positions$locus_position <= locus_lengths[mutation_positions$locus]))
+mutations_without_position <- amr_df %>%
+    filter(is.na(position_gene_aware)) %>%
+    select(gene, variant)
+mutations_without_position
+
+markers <- matrix(FALSE, length(ordered_loci), length(locus_positions))
+markers[cbind(
+    match(mutation_positions$locus, ordered_loci),
+    mutation_positions$locus_position
+)] <- TRUE
+coverage_colors <- pathogenwatch_coverage_color_fun
+stopifnot(coverage_colors(0) == "#FFFFFFFF", coverage_colors(1) == "#FEE08BFF",
+          coverage_colors(2) == coverage_colors(max(coverage_qc$normalized_depth)))
+```
+
+```{r}
+isolate_matrices <- setNames(lapply(isolates, function(sample_name) {
+    sample_data <- filter(coverage_qc, isolate == sample_name)
+    mat <- matrix(
+        NA_real_,
+        length(ordered_loci),
+        length(locus_positions),
+        dimnames = list(ordered_loci, locus_positions)
+    )
+    indices <- cbind(
+        match(sample_data$locus, ordered_loci),
+        sample_data$locus_position
+    )
+    mat[indices] <- sample_data$normalized_depth
+    stopifnot(identical(unname(mat[indices]), sample_data$normalized_depth),
+              sum(!is.na(mat)) == nrow(sample_data))
+    mat
+}), isolates)
+
+make_panel <- function(sample_name) {
+    mat <- isolate_matrices[[sample_name]]
+    called_loci <- gene_calls$locus[gene_calls$isolate == sample_name]
+    panel_locus_labels <- paste0(
+        gsub("_", " ", rrna_display(ordered_loci)),
+        ifelse(ordered_loci %in% called_loci, " (called)", "")
+    )
+    ht <- Heatmap(
+        mat, name = "position_depth", col = coverage_colors, na_col = "white",
+        cluster_rows = FALSE, cluster_columns = FALSE,
+        row_names_side = "left", row_labels = panel_locus_labels,
+        row_names_gp = gpar(fontsize = 9.5),
+        column_labels = ifelse(
+            locus_positions == 1 | locus_positions %% 1000 == 0,
+            locus_positions,
+            ""
+        ),
+        column_names_rot = 0, column_names_gp = gpar(fontsize = 10),
+        column_title = "Position (bp)", column_title_side = "bottom",
+        column_title_gp = gpar(fontsize = 12),
+        show_heatmap_legend = FALSE,
+        use_raster = TRUE, raster_device = "agg_png", raster_by_magick = FALSE,
+        layer_fun = function(j, i, x, y, width, height, fill) {
+            first <- j == 1
+            grid.rect(x = unit(locus_lengths[i[first]] / ncol(mat) / 2, "npc"),
+                      y = y[first], width = unit(locus_lengths[i[first]] / ncol(mat), "npc"),
+                      height = height[first], gp = gpar(fill = NA, col = "black", lwd = 0.6))
+            marked <- markers[cbind(i, j)]
+            grid.points(x[marked], y[marked], pch = 1, size = unit(1.1, "mm"),
+                        gp = gpar(col = "black", lwd = 0.6))
+        }
+    )
+    grid.grabExpr(draw(ht, column_title = isolate_info$panel_title[match(sample_name, isolate_info$isolate)],
+                       column_title_gp = gpar(fontsize = 12, fontface = "bold"),
+                       padding = unit(c(3, 2, 3, 2), "mm")), width = 5.6, height = 5.3)
+}
+panels <- lapply(ordered_isolates, make_panel)
+
+# labels = "AUTO" adds panel letters A-I; remove if you don't cite panels individually
+panel_grid <- plot_grid(plotlist = panels, ncol = 3)
+coverage_legend <- Legend(
+    title = "Chromosome-normalized depth",
+    col_fun = coverage_colors,
+    at = c(0, 0.5, 1, 1.5, 2),
+    labels = c("0", "0.5", "1", "1.5", "2+"),
+    direction = "horizontal",
+    title_position = "topcenter",
+    title_gp = gpar(fontsize = 14),
+    labels_gp = gpar(fontsize = 12),
+    legend_width = unit(5, "cm"),
+    grid_height = unit(2.5, "mm")
+)
+coverage_legend_grob <- grid.grabExpr(draw(coverage_legend))
+
+supplement_figure <- plot_grid(
+    panel_grid,
+    coverage_legend_grob,
+    ncol = 1,
+    rel_heights = c(1, 0.055)
+)
+```
+
+```{r, fig.width=16.8, fig.height=15.9, dpi=120}
+supplement_figure
+```
+
+Each panel shows one QC-passing isolate and its pool, with all 35 Pathogenwatch reference genes retained. Panels are ordered by pool concentration (High, then Medium, then Low). A gene is marked `(called)` only when AMRSearch reports a gene call for that isolate and reference; unmarked genes have no gene call. Each isolate is normalized by its own chromosome median-nonzero depth, matching the isolate-level normalization used by Figure 4. The common legend shows the Figure 4D color scale: white at zero, blue below 1, yellow at 1, and orange to red up to 2+, with space outside the gene blank. Circles mark database mutation positions, regardless of whether the isolate has the mutation; variants sharing a position share a circle. The four disrupted entries listed above have no defined position.
+
+```{r}
+ggsave(paste0(figure_prefix, ".png"), supplement_figure, width = 16.8, height = 15.9, dpi = 600, bg = "white")
+ggsave(paste0(figure_prefix, ".pdf"), supplement_figure, width = 16.8, height = 15.9, dpi = 600, bg = "white")
+```

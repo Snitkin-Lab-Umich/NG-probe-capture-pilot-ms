@@ -1,0 +1,383 @@
+---
+title: "Figure 2: Probe coverage of reference genome"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ggalluvial", "cowplot", "scales", "ggtext")
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+source("./lib/processed_data_functions.R")
+
+options(stringsAsFactors = FALSE, scipen = 999)
+
+status_colors <- c(
+  "Fully covered" = "#1B9E77",
+  "Partially covered" = "#E6AB02",
+  "Not covered" = "#D95F02"
+)
+
+gene_workflow_colors <- c(
+  "All genes" = "#BDBDBD",
+  "Covered" = "#2166AC",
+  "Not covered" = "#B2182B",
+  "Fully covered" = "#1B9E77",
+  "Partially covered" = "#E6AB02"
+)
+```
+
+# Load data
+
+```{r data}
+load_processed_data(
+  "./data/probe_mapping/curated/probe_mapping_data.RDS",
+  c(
+    "reference_genome_summary", "gene_coverage", "bin_coverage",
+    "gene_track_data", "bait_track_data", "partial_genes",
+    "relative_gene_coverage", "amr_gene_summary",
+    "amr_gene_segments", "reference_limit_mb"
+  )
+)
+```
+
+# Figure 2A: Coverage over genome
+
+```{r figure-2a}
+paste0(
+  "Percentage of genome covered by a probe: ",
+  round(reference_genome_summary$genome_covered_percent, 2)
+)
+
+p2A_coverage <- ggplot(
+  bin_coverage,
+  aes(midpoint_mb, coverage_percent)
+) +
+  geom_area(fill = "#9ECAE1") +
+  geom_line(linewidth = 0.5, color = "#08519C") +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "darkgrey") +
+  scale_x_continuous(limits = c(0, reference_limit_mb), expand = c(0, 0)) +
+  scale_y_continuous(
+    limits = c(0, 101),
+    breaks = seq(0, 100, 20),
+    labels = label_number(suffix = "%")
+  ) +
+  labs(x = NULL, y = "Probe coverage\nper 10 kb window") +
+  theme_figure +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    plot.margin = margin(3, 5, 0, 5)
+  )
+
+p2A_genes <- ggplot(gene_track_data) +
+  annotate(
+    "rect",
+    xmin = 0,
+    xmax = reference_limit_mb,
+    ymin = 0.5,
+    ymax = 1.5,
+    fill = "white",
+    color = "grey75"
+  ) +
+  geom_rect(
+    aes(xmin = start_mb, xmax = end_mb, ymin = 0.5, ymax = 1.5),
+    fill = "#B2182B",
+    color = NA
+  ) +
+  scale_x_continuous(limits = c(0, reference_limit_mb), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0.5, 1.5), breaks = NULL, expand = c(0, 0)) +
+  labs(x = NULL, y = "Gene") +
+  theme_figure +
+  theme(
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_text(angle = 0, vjust = 0.5, size = 9),
+    plot.margin = margin(0, 5, 0, 5)
+  )
+
+p2A_baits <- ggplot(bait_track_data) +
+  annotate(
+    "rect",
+    xmin = 0,
+    xmax = reference_limit_mb,
+    ymin = 0.5,
+    ymax = 1.5,
+    fill = "white",
+    color = NA
+  ) +
+  geom_rect(
+    aes(xmin = start_mb, xmax = end_mb, ymin = 0.5, ymax = 1.5),
+    fill = "#2166AC",
+    color = NA
+  ) +
+  scale_x_continuous(
+    limits = c(0, reference_limit_mb),
+    expand = c(0, 0),
+    labels = label_number(accuracy = 0.1),
+    breaks = scales::pretty_breaks(8)
+  ) +
+  scale_y_continuous(limits = c(0.5, 1.5), breaks = NULL, expand = c(0, 0)) +
+  labs(x = "Reference genome position (Mb)", y = "Probe coverage") +
+  theme_figure +
+  theme(
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_text(angle = 0, vjust = 0.5, size = 9),
+    axis.line.x.bottom = element_line(color = "black", linewidth = 0.4),
+    plot.margin = margin(0, 5, 3, 5)
+  )
+
+p2A <- plot_grid(
+  p2A_coverage,
+  p2A_genes,
+  p2A_baits,
+  ncol = 1,
+  rel_heights = c(3, 0.26, 0.52),
+  align = "v",
+  axis = "lr"
+)
+
+p2A
+```
+
+# Figure 2B: Gene coverage data
+
+```{r figure-2b}
+total_genes <- nrow(gene_coverage)
+covered_genes <- sum(gene_coverage$covered_bp > 0L)
+fully_covered_genes <- sum(gene_coverage$coverage_status == "Fully covered")
+partially_covered_genes <- sum(gene_coverage$coverage_status == "Partially covered")
+uncovered_genes <- sum(gene_coverage$coverage_status == "Not covered")
+
+paste0("Percentage of genes covered by a probe: ",round(covered_genes/total_genes*100,2))
+
+gene_stage_levels <- c("All genes", "Probe coverage", "Coverage completeness")
+gene_stratum_levels <- c(
+  "Not covered",
+  "Partially covered",
+  "Fully covered",
+  "Covered",
+  "All genes"
+)
+
+p2B <- ggplot(data=gene_coverage,aes(x=coverage_status)) + geom_bar(fill='black',width=0.66) + theme_bw() + labs(x="Level of probe coverage",y="Genes")  +
+    geom_text(
+        stat = "count", 
+        aes(label = after_stat(count)), 
+        vjust = -0.15,size = 3
+    ) +ylim(NA,1775)
+
+p2B
+```
+
+# Figure 2C: Partial coveregd genes distribution
+
+```{r figure-2c}
+partial_genes <- gene_coverage %>%
+  filter(coverage_status == "Partially covered")
+
+table(partial_genes$coverage_percent >=80)
+
+p2C <- ggplot(partial_genes, aes(coverage_percent)) +
+  geom_histogram(
+    binwidth = 2.5,
+    boundary = 0,
+    color = "white",
+    fill = "black"
+  ) +
+  geom_rug(alpha = 0.25) +
+  scale_x_continuous(
+    limits = c(0, 100),
+    breaks = seq(0, 100, 20),
+    labels = label_number(suffix = "%")
+  ) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    x = "Percent covered by probes",
+    y = "Partially covered genes"
+  ) +
+  theme_figure +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()
+  )
+
+p2C
+```
+
+# Figure 2D: Relative position bins
+
+```{r figure-2d}
+p2D <- ggplot(
+  relative_gene_coverage,
+  aes(relative_position, coverage_percent)
+) +
+  geom_jitter(
+    width = 0.18,
+    height = 0,
+    size = 0.35,
+    alpha = 0.25,
+    color = "black"
+  ) +
+  geom_boxplot(
+    width = 0.68,
+    outlier.shape = NA,
+    fill = alpha("#9ECAE1", 0.55),
+    color = "#08519C",
+    linewidth = 0.4
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100),
+    breaks = seq(0, 100, 20),
+    labels = label_number(suffix = "%")
+  ) +
+  labs(
+    x = "Relative position (% from start)",
+    y = "Percent covered by probes"
+  ) +
+  theme_figure +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p2D
+```
+
+# Figure 2E: 
+
+```{r figure-2e}
+format_locus_md <- function(x) {
+  is_rrna <- grepl("rRNA", x)
+  out <- ifelse(is_rrna, x, paste0("*", x, "*"))        # italicize gene symbols
+  out <- gsub("\\*bla ?TEM\\*", "*bla*<sub>TEM</sub>", out)  # blaTEM subscript
+  out
+}
+
+p2E <- ggplot() +
+  geom_tile(
+    data = amr_gene_summary,
+    aes(x = 50, y = locus),
+    width = 100,
+    height = 0.64,
+    fill = "#E6E6E6",
+    color = "grey75"
+  ) +
+  geom_tile(
+    data = amr_gene_segments,
+    aes(
+      x = segment_midpoint,
+      y = locus,
+      width = segment_width
+    ),
+    height = 0.64,
+    fill = "#2166AC"
+  ) +
+  geom_text(
+    data = amr_gene_summary,
+    aes(
+      x = 103,
+      y = locus,
+      label = sprintf("%.1f%%", coverage_percent)
+    ),
+    hjust = 0,
+    size = 3
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 100, 25),
+    labels = label_number(suffix = "%"),
+    expand = c(0, 0)
+  ) +
+  scale_y_discrete(labels = format_locus_md) +
+  coord_cartesian(xlim = c(0, 112), clip = "off") +
+  labs(
+    x = "Relative position (% from start)",
+    y = NULL
+  ) +
+  theme_figure +
+  theme(
+    panel.grid      = element_blank(),
+    plot.background = element_blank(),
+    axis.text.y     = element_markdown(size = 9),  # was element_text(face="italic")
+    plot.margin     = margin(5, 5, 5, 5)
+  )
+
+p2E
+```
+
+# Combine and save
+
+```{r combine, fig.width=10, fig.height=10}
+figure_2_new_top <- plot_grid(
+  p2A,
+  ncol = 1,
+  labels = "A",
+  label_size = 14
+)
+
+figure_2_new_middle <- plot_grid(
+  p2B,
+  p2C, 
+  nrow = 1,
+  rel_widths = c(0.66, 1),
+  labels = c("B", "C"),
+  label_size = 14, vjust = 0.75
+)
+
+figure_2_new_bottom <- plot_grid(
+  p2D,
+  p2E,
+  nrow = 1,
+  rel_widths = c(0.66, 1),
+  labels = c("D", "E"), vjust = 0.75
+)
+
+figure_2_new <- plot_grid(
+  figure_2_new_top,
+  figure_2_new_middle,
+  figure_2_new_bottom,
+  ncol = 1,
+  rel_heights = c(1, 0.75, 1)
+)
+
+figure_2_new
+```
+
+# Save the figure
+```{r}
+ggsave(
+  filename = file.path("figures/figure_2_probe_set_reference_genome_coverage.png"),
+  plot = figure_2_new,
+  width = 10,
+  height = 10,
+  dpi = 600,
+  bg = "white"
+)
+``` 

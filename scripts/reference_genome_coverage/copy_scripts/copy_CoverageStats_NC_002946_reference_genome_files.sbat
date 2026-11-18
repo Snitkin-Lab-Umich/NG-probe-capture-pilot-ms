@@ -1,0 +1,26 @@
+#!/bin/sh
+# Job name
+#SBATCH --job-name=copy_coverage_stats
+# User info
+#SBATCH --mail-user=kgontjes@umich.edu
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --export=ALL
+#SBATCH --partition=standard
+#SBATCH --account=esnitkin1 
+#SBATCH --output=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/reference_genome_coverage/copy_scripts/copy_CoverageStats_NC_002946_reference_genome_files.out
+#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=10g --time=00:10:00
+
+# Results
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/reference_genome_coverage/coverage/reference_genome_coverage
+rsync -av --relative \
+  /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/results/CoverageStats_NG_pilot_NC_002946_reference_genome/./*/gatk/ \
+  .
+
+# Scripts
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/reference_genome_coverage
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/CoverageStats_NG_pilot_NC_002946_reference_genome.sbat CoverageStats_job
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/config/CoverageStats_NG_pilot_NC_002946_reference_genome.yaml CoverageStats_config
+
+# Logs
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/reference_genome_coverage
+cp -r /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/logs/CoverageStats_NG_pilot_NC_002946_reference_genome/ . 

@@ -1,0 +1,44 @@
+---
+title: "Curate_chromosome_reference_coverage_data_summary_statistics"
+author: "Kyle Gontjes"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+#knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ComplexHeatmap", "ggtext", "cowplot", "grid",'toml') 
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+```
+
+# Curate reference genome data
+```{r}
+samples <- read_tsv("./scripts/CoverageStats_shared_scripts/sample_NG_pilot.tsv") %>% .$sample_id
+
+summary_statistics <- lapply(samples,FUN=function(x){ 
+  read_tsv(paste0("./data/reference_genome_coverage/coverage/reference_genome_coverage/",x,"/gatk/",x,"_CoverageStats_summary.txt"))
+}) %>% do.call(rbind,.) %>% mutate(reference_location = 'Neisseria gonorrhoeae FA 1090')
+
+summary_statistics$genotype <- 'Neisseria gonorrhoeae FA 1090 chromosome'
+
+saveRDS(summary_statistics,"./data/reference_genome_coverage/coverage/curated_datasets/FA1090_genome_coverage_summary_statistics.RDS")
+```

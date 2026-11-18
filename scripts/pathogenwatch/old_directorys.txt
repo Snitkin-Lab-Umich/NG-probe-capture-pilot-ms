@@ -1,0 +1,13 @@
+Existing manuscript scripts: locations below are their names before numbering, not external source copies.
+
+01__pathogenwatch_summary_functions.R
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/pathogenwatch/pathogenwatch_summary_functions.R
+
+02__pathogenwatch_data_processing.R
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/pathogenwatch/pathogenwatch_data_processing.R
+
+03__chosen_genomes_data_processing.R
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/pathogenwatch/chosen_genomes_data_processing.R
+
+04__build_pathogenwatch_data.R
+old location: /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/pathogenwatch/build_pathogenwatch_data.R

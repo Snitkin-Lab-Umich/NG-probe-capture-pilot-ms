@@ -1,0 +1,252 @@
+---
+title: "iso_sel"
+output: html_document
+date: "2025-02-24"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+opts_knit$set(echo = F,warning = FALSE, message = FALSE,error=F,comment=NA) 
+opts_chunk$set(echo = F,warning = FALSE, message = FALSE,error=F,comment=NA)
+knitr::opts_knit$set(root.dir = '~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/')
+setwd('~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/')
+```
+
+```{r}
+# packages
+pacman::p_load(tidyverse, ape, future.apply, ggtree, ggbreak, ComplexHeatmap, hues, ggnewscale, tidytree) 
+
+# tree (takes time to run)
+tree <- read.tree("./data/phylogeny/source/cognac_nj.tre")
+tr <- ggtree(tree)
+
+# relevant metadata
+ng_amrsearch <- read_csv("../../data/pathogenwatch_metadata/Neisseria_gonorrhoeae_amrsearch.csv") %>% subset(`Genome Name` %in% tree$tip.label)
+ng_snps <- readRDS("../../data/ng_pathogenwatch_files/ng_snps.RDS") %>% subset(`Genome.Name` %in% tree$tip.label)
+ng_meta <- left_join(ng_amrsearch[,c(-1,-3,-4)], ng_snps[,c(-1,-3,-4)], by = join_by(`Genome Name` == `Genome.Name`)) %>% as.data.frame()
+colnames(ng_meta)[1] <- "Isolate"
+rownames(ng_meta) <- ng_meta$Isolate
+
+metadata <- read.csv("../../data/pathogenwatch_metadata/Neisseria_gonorrhoeae_metrics.csv") %>% subset(Genome.Name %in% tree$tip.label)
+metadata <- metadata %>% mutate_if(colnames(.) %in% c("Genome.Length","No..Contigs","Smallest.Contig","Largest.Contig","Average.Contig.Length","N50","GC.Content"),as.numeric)
+ng_mlst <- read_csv("../../data/pathogenwatch_metadata/Neisseria_gonorrhoeae_mlst.csv") %>% as.data.frame()
+rownames(ng_mlst) <- ng_mlst$`Genome Name`
+
+# clustering results
+clr_collapse <- readRDS("./data/phylogeny/source/distinct_profiles/cluster_collapse.RDS")
+clr_str <- readRDS("./data/phylogeny/source/distinct_profiles/cluster_str.RDS")
+clr_stats <- readRDS("./data/phylogeny/source/distinct_profiles/cluster_stats.RDS")
+prof_ids <- readRDS("./data/phylogeny/source/distinct_profiles/profile_id.RDS")
+clr_res_list <- readRDS("./data/phylogeny/source/distinct_profiles/cluster_results_list.RDS")
+```
+
+# isolate selection
+
+```{r}
+# method 1: random selection of isolates
+clr_collapse <- clr_collapse %>% mutate(iso_sel_random = sapply(str_split(isolates, ","), function(x) sample(x, 1)))
+
+# method 2: by genome quality then random sampling
+samp_by_qual <- function(iso_vec) {
+  iso_vec <- as.character(iso_vec)
+  iso_list <- str_split(iso_vec, ",") %>% unlist()
+  if(length(iso_list > 1)) {
+    iso_sub <- metadata %>% subset(`Genome.Name` %in% iso_list) %>% 
+      subset(No..Contigs == min(.$No..Contigs, na.rm = T)) %>% 
+      subset(N50 == max(.$N50, na.rm = T)) %>% .$Genome.Name
+    return(sample(iso_sub, 1))
+  } else {
+    return(iso_vec)
+  }
+}
+
+clr_collapse$iso_by_qual <- sapply(clr_collapse$isolates, samp_by_qual) #takes a few mins
+
+```
+
+```{r}
+# save dataframes
+saveRDS(clr_collapse %>% subset(threshold == 350), "./data/representative_isolates/source/selections/profiles_350.RDS")
+saveRDS(clr_collapse %>% subset(threshold == 450), "./data/representative_isolates/source/selections/profiles_450.RDS")
+saveRDS(clr_collapse %>% subset(threshold == 650), "./data/representative_isolates/source/selections/profiles_650.RDS")
+saveRDS(clr_collapse %>% subset(threshold == 1050), "./data/representative_isolates/source/selections/profiles_1050.RDS")
+saveRDS(list(script = "scripts/representative_isolates/04__selected_isolates/01__iso_sel.Rmd", original_script = "../../2024_NG_enrichment_probe_creation/2025-02-24_selected_isolates/analysis/iso_sel.Rmd", generated_at = Sys.time()), "./data/representative_isolates/source/selections/provenance.RDS")
+
+```
+
+# visuals
+
+```{r}
+# genome quality of select genomes
+
+# 1050 SNPs (~1500 profiles)
+isos_1500 <- clr_collapse %>% subset(threshold == 1050) %>% .$iso_by_qual %>% unname()
+genome_length_1500 <- ggplot(data= metadata %>% subset(Genome.Name %in% isos_1500), aes(x=Genome.Length)) +
+  geom_histogram(bins = 100) + xlab("Genome Length (bp)") + ylab("") + theme_bw()
+contigs_ct_1500 <- ggplot(data=metadata %>% subset(Genome.Name %in% isos_1500), aes(x=No..Contigs)) +
+  geom_histogram(bins = 100) + xlab("No. Contigs") + ylab("") + theme_bw()
+N50_1500 <- ggplot(data=metadata %>% subset(Genome.Name %in% isos_1500), aes(x=N50)) +
+  geom_histogram(bins = 100) + xlab("N50") + ylab("Count") + theme_bw() + xlim(0, 200000)
+
+# 650 SNPs (~2000 profiles)
+isos_2000 <- clr_collapse %>% subset(threshold == 650) %>% .$iso_by_qual %>% unname()
+genome_length_2000 <- ggplot(data= metadata %>% subset(Genome.Name %in% isos_2000), aes(x=Genome.Length)) +
+  geom_histogram(bins = 100) + xlab("Genome Length (bp)") + ylab("") + theme_bw()
+contigs_ct_2000 <- ggplot(data=metadata %>% subset(Genome.Name %in% isos_2000), aes(x=No..Contigs)) +
+  geom_histogram(bins = 100) + xlab("No. Contigs") + ylab("") + theme_bw()
+N50_2000 <- ggplot(data=metadata %>% subset(Genome.Name %in% isos_2000), aes(x=N50)) +
+  geom_histogram(bins = 100) + xlab("N50") + ylab("Count") + theme_bw() + xlim(0, 200000)
+
+# 450 SNPs (~2500 profiles)
+isos_2500 <- clr_collapse %>% subset(threshold == 450) %>% .$iso_by_qual %>% unname()
+genome_length_2500 <- ggplot(data= metadata %>% subset(Genome.Name %in% isos_2500), aes(x=Genome.Length)) +
+  geom_histogram(bins = 100) + xlab("Genome Length (bp)") + ylab("") + theme_bw()
+contigs_ct_2500 <- ggplot(data=metadata %>% subset(Genome.Name %in% isos_2500), aes(x=No..Contigs)) +
+  geom_histogram(bins = 100) + xlab("No. Contigs") + ylab("") + theme_bw()
+N50_2500 <- ggplot(data=metadata %>% subset(Genome.Name %in% isos_2500), aes(x=N50)) +
+  geom_histogram(bins = 100) + xlab("N50") + ylab("Count") + theme_bw() + xlim(0, 200000)
+
+# 350 SNPs (~3000 profiles, actual: 2877)
+isos_3000 <- clr_collapse %>% subset(threshold == 350) %>% .$iso_by_qual %>% unname()
+genome_length_3000 <- ggplot(data= metadata %>% subset(Genome.Name %in% isos_3000), aes(x=Genome.Length)) +
+  geom_histogram(bins = 100) + xlab("Genome Length (bp)") + ylab("") + theme_bw()
+contigs_ct_3000 <- ggplot(data=metadata %>% subset(Genome.Name %in% isos_3000), aes(x=No..Contigs)) +
+  geom_histogram(bins = 100) + xlab("No. Contigs") + ylab("") + theme_bw()
+N50_3000 <- ggplot(data=metadata %>% subset(Genome.Name %in% isos_3000), aes(x=N50)) +
+  geom_histogram(bins = 100) + xlab("N50") + ylab("Count") + theme_bw() + xlim(0, 200000)
+
+cowplot::plot_grid(N50_1500, genome_length_1500, contigs_ct_1500,
+                   N50_2000, genome_length_2000, contigs_ct_2000,
+                   N50_2500, genome_length_2500, contigs_ct_2500,
+                   N50_3000, genome_length_3000, contigs_ct_3000,
+                   ncol=3)
+
+```
+
+```{r}
+# visualize isolate selections on tree
+## selection df
+iso_sel_df <- metadata %>% select(Genome.Name)
+rownames(iso_sel_df) <- iso_sel_df$Genome.Name
+iso_sel_df <- iso_sel_df %>% 
+  mutate(thresh_350 = ifelse(Genome.Name %in% isos_3000,1,0)) %>%
+  mutate(thresh_450 = ifelse(Genome.Name %in% isos_2500,1,0)) %>%
+  mutate(thresh_650 = ifelse(Genome.Name %in% isos_2000,1,0)) %>%
+  mutate(thresh_1050 = ifelse(Genome.Name %in% isos_1500,1,0)) 
+
+## ST data
+common_STs <- table(ng_mlst$ST) %>% sort(decreasing = T) %>% head(35) %>% names()
+colors <- iwanthue(35, plot = F)
+color_vector <- setNames(c(colors, "#FFFFFF"), c(common_STs, "0"))
+
+ST_color <- scale_fill_manual(breaks = names(color_vector),values=color_vector,labels = c(names(color_vector)[-36], "other") ,name="ST",guide="none")
+
+ng_mlst_ST_labelled <- ng_mlst %>% mutate(ST_labels = ifelse(ST %in% common_STs, ST, 0)) %>% as.data.frame()
+rownames(ng_mlst_ST_labelled) <- ng_mlst_ST_labelled$`Genome Name`
+p0 <- gheatmap(tr, data = ng_mlst_ST_labelled %>% select(ST_labels), width = 0.25, color = NULL, colnames_position = 'top', colnames_offset_y=670) + ST_color + ylim(NA, 33500)
+p1 <- p0 + new_scale_fill()
+## tree
+snp_color_vec <- setNames(c("red", "#FFFFFF"), c("1", "0"))
+SNP_color <- scale_fill_manual(breaks = names(snp_color_vec),values=snp_color_vec,labels = names(snp_color_vec),
+                               name="included isolate",guide="none")
+iso_sel_df[,-1] <- lapply(iso_sel_df[,-1], as.factor)
+p2 <- gheatmap(p1, data = iso_sel_df[,-1], offset = 0.001, color = NULL, colnames_position = 'top', colnames_offset_y=620, font.size = 2, colnames_angle = 90) + ylim(NA, 33600) + SNP_color
+
+p2
+
+## color the largest distinct profiles on tree
+top_isos_t350_df <- clr_collapse %>% subset(threshold == 350) %>% arrange(desc(count)) %>% .[1:35,] 
+top_isos_t450_df <- clr_collapse %>% subset(threshold == 450) %>% arrange(desc(count)) %>% .[1:35,]
+top_isos_t650_df <- clr_collapse %>% subset(threshold == 650) %>% arrange(desc(count)) %>% .[1:35,] 
+top_isos_t1050_df <- clr_collapse %>% subset(threshold == 1050) %>% arrange(desc(count)) %>% .[1:35,] 
+
+top_prof_df <- iso_sel_df %>% select(Genome.Name)
+top_prof_df$thresh_350 <- 0
+top_prof_df$thresh_450 <- 0
+top_prof_df$thresh_650 <- 0
+top_prof_df$thresh_1050 <- 0
+
+rank_profiles_isolates <- function(df, threshold_col) {
+  for (i in 1:nrow(df)) {
+    isolates_list <- strsplit(df$isolates[i], ",")[[1]]
+    matching_rows <- rownames(top_prof_df) %in% isolates_list
+    top_prof_df[[threshold_col]][matching_rows] <- i
+  }
+  return(top_prof_df)
+}
+
+top_prof_df <- rank_profiles_isolates(top_isos_t350_df, "thresh_350")
+top_prof_df <- rank_profiles_isolates(top_isos_t450_df, "thresh_450")
+top_prof_df <- rank_profiles_isolates(top_isos_t650_df, "thresh_650")
+top_prof_df <- rank_profiles_isolates(top_isos_t1050_df, "thresh_1050")
+
+# append the cluster number ids
+clr_str_thresh <- clr_str %>% select(c("350", "450", "650", "1050"))
+clr_str_thresh$Genome.Name <- rownames(clr_str_thresh)
+left_join(top_prof_df, clr_str_thresh) -> clr_id_df
+rownames(clr_id_df) <- clr_id_df$Genome.Name
+
+colors_profiles <- iwanthue(nrow(top_isos_t350_df), plot = F)
+color_vector_prof <- setNames(c(colors_profiles, "#FFFFFF"), c(as.character(1:35), "0"))
+
+prof_color <- scale_fill_manual(breaks = names(color_vector_prof),values=color_vector_prof,labels = c(names(color_vector_prof)[-(length(color_vector_prof))], "other") ,name="prof",guide="none")
+top_prof_df[,-1] <- lapply(top_prof_df[,-1], as.factor)
+
+# combining threshold plots
+dp1.0 <- gheatmap(p1, data = top_prof_df %>% select(thresh_350), width = 0.25, offset = 0.001, color = NULL, colnames_position = 'top', colnames_offset_y=620) + ylim(NA, 33600) + prof_color
+dp1 <- dp1.0 + new_scale_fill()
+dp2.0 <- gheatmap(dp1, data = top_prof_df %>% select(thresh_450), width = 0.25, offset = 0.00205, color = NULL, colnames_position = 'top', colnames_offset_y=620) + ylim(NA, 33600) + prof_color
+dp2 <- dp2.0 + new_scale_fill()
+dp3.0 <- gheatmap(dp2, data = top_prof_df %>% select(thresh_650), width = 0.25, offset = 0.00310, color = NULL, colnames_position = 'top', colnames_offset_y=620) + ylim(NA, 33600) + prof_color
+dp3 <- dp3.0 + new_scale_fill()
+dp4.0 <- gheatmap(dp3, data = top_prof_df %>% select(thresh_1050), width = 0.25, offset = 0.00415, color = NULL, colnames_position = 'top', colnames_offset_y=620) + ylim(NA, 33600) + prof_color
+dp4 <- dp4.0 + new_scale_fill()
+
+
+dp5 <- gheatmap(dp4, data = iso_sel_df[,-1], offset = 0.00520, color = NULL, colnames_position = 'top') + ylim(NA, 33600) + SNP_color
+```
+
+```{r}
+# plotting selected isolates on tip labels
+
+## label 350 selected isolates
+tr_350_lab <- tr %<+% iso_sel_df + 
+  geom_tippoint(aes(color = factor(thresh_350)),size = 0.25) +
+  scale_color_manual(values = c("0" = NA, "1" = "red"), na.translate = FALSE)
+
+## append ST col
+p0_350 <- gheatmap(tr_350_lab, data = ng_mlst_ST_labelled %>% select(ST_labels), width = 0.25, color = NULL, colnames_position = 'top', colnames_offset_y=670) + ST_color + ylim(NA, 33500)
+p1_350 <- p0_350 + new_scale_fill()
+
+## add top 35 clusters
+p2_350 <- gheatmap(p1_350, data = top_prof_df %>% select(thresh_350), width = 0.25, offset = 0.001, color = NULL, colnames_position = 'top', colnames_offset_y=620) + ylim(NA, 33600) + prof_color
+p3_350 <- p2_350 + new_scale_fill()
+
+## add binary isolate selection col
+p4_350 <- gheatmap(p3_350, data = iso_sel_df[,-1] %>% select(thresh_350), offset = 0.002, width = 0.25, color = NULL, colnames_position = 'top') + ylim(NA, 33600) + SNP_color
+p4_350
+
+# visualize on a small substree of tree
+
+sub_tree1 <- tree_subset(tree,node = 1000)  
+sub_tr <- ggtree(sub_tree1)
+
+tr_350_lab_sub <- sub_tr %<+% (iso_sel_df %>% subset(Genome.Name %in% sub_tree1$tip.label)) + 
+  geom_tippoint(aes(color = factor(thresh_350)),size = 1.25) +
+  scale_color_manual(values = c("0" = NA, "1" = "red"), na.translate = FALSE)
+
+## append ST col
+p0_350_sub <- gheatmap(tr_350_lab_sub, data = ng_mlst_ST_labelled %>% subset(rownames(.) %in% sub_tree1$tip.label) %>% select(ST_labels), width = 0.25, color = NULL, colnames_position = 'top', colnames_offset_y = 15) + ST_color
+p1_350_sub <- p0_350_sub + new_scale_fill()
+
+## add top 35 clusters
+p2_350_sub <- gheatmap(p1_350_sub, data = top_prof_df %>% subset(rownames(.) %in% sub_tree1$tip.label) %>% select(thresh_350), width = 0.25, offset = 0.0001, color = NULL, colnames_position = 'top', colnames_offset_y=15) + prof_color
+p3_350_sub <- p2_350_sub + new_scale_fill()
+
+## add binary isolate selection col
+p4_350_sub <- gheatmap(p3_350_sub, data = iso_sel_df[,-1] %>% subset(rownames(.) %in% sub_tree1$tip.label) %>% select(thresh_350), offset = 0.0002, width = 0.25, color = NULL, colnames_position = 'top', colnames_offset_y=15) + SNP_color
+p5_350_sub <- p4_350_sub + new_scale_fill()
+```

@@ -1,0 +1,63 @@
+---
+title: "curate_Pathogenwatch_gene_coverage"
+author: "Kyle Gontjes"
+date: '`r Sys.Date()`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+#knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ComplexHeatmap", "ggtext", "cowplot", "grid",'toml') 
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R") 
+```
+
+# Curate reference genome data
+```{r}
+samples <- read_tsv("./scripts/CoverageStats_shared_scripts/sample_NG_pilot.tsv") %>% .$sample_id
+genotypes <- list.files("./data/PathogenWatch_AMR_coverage/database/gene_references/") %>% str_split(.,"\\.",simplify=T) %>% .[,1] %>% unique
+
+summary_statistics <- lapply(samples,FUN=function(x){
+  pbmcapply::pbmclapply(genotypes,FUN=function(y){
+    read_tsv(paste0("./data/PathogenWatch_AMR_coverage/coverage/gene_coverage/CoverageStats_NG_pilot_PathogenWatch_gene_",y,"/",x,"/gatk/",x,"_CoverageStats_summary.txt"))
+  },mc.cores = 10) %>% do.call(rbind,.)
+  
+}) %>% do.call(rbind,.) %>% mutate(reference_location = 'Pathogenwatch')
+
+summary_statistics$genotype <- summary_statistics$reference %>% gsub("CoverageStats_NG_pilot_PathogenWatch_gene_","",.)
+
+saveRDS(summary_statistics,"./data/PathogenWatch_AMR_coverage/coverage/curated_datasets/Pathogenwatch_gene_coverage_summary_statistics.RDS")
+```
+
+# Curate overall gene data
+```{r}
+gene_position_data <- lapply(samples,FUN=function(x){
+  pbmcapply::pbmclapply(genotypes,FUN=function(y){
+    read_csv(paste0("./data/PathogenWatch_AMR_coverage/coverage/gene_coverage/CoverageStats_NG_pilot_PathogenWatch_gene_",y,"/",x,"/gatk/",x,"_summary")) %>% select(Locus,Total_Depth) 
+  },mc.cores = 10) %>% do.call(rbind,.) %>% mutate(isolate=x)
+  
+}) %>% do.call(rbind,.) %>% mutate(reference_location = 'Pathogenwatch')
+
+gene_position_data$genotype <- gene_position_data$Locus %>% str_split(.,":",simplify=T) %>% .[,1]
+gene_position_data$position <-   gene_position_data$Locus %>% str_split(.,":",simplify=T) %>% .[,2] %>% as.numeric
+
+saveRDS(gene_position_data,"./data/PathogenWatch_AMR_coverage/coverage/curated_datasets/Pathogenwatch_gene_coverage_by_position.RDS")
+``` 

@@ -1,0 +1,62 @@
+---
+title: "normalize_gene_coverage_by_chromosome_coverage"
+author: "Kyle Gontjes"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+#knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ComplexHeatmap", "ggtext", "cowplot", "grid",'toml') 
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+```
+
+# Load data
+```{r}
+chromosome_coverage_data <- readRDS("./data/reference_genome_coverage/coverage/curated_datasets/FA1090_genome_coverage_summary_statistics.RDS")
+gene_position_data <- readRDS("./data/PathogenWatch_AMR_coverage/coverage/curated_datasets/Pathogenwatch_gene_coverage_by_position.RDS")
+gene_summary_statistics <- readRDS("./data/PathogenWatch_AMR_coverage/coverage/curated_datasets/Pathogenwatch_gene_coverage_summary_statistics.RDS")
+gene_summary_statistics$mean_non_zero <- ifelse(is.na(gene_summary_statistics$mean_non_zero),0,gene_summary_statistics$mean_non_zero)
+gene_summary_statistics$median_non_zero <- ifelse(is.na(gene_summary_statistics$median_non_zero),0,gene_summary_statistics$median_non_zero)
+```
+
+# Generate normalized data
+## Gene position
+```{r}
+gene_position_data <- left_join(gene_position_data,chromosome_coverage_data %>% select(isolate,median,median_non_zero) %>% `colnames<-`(c("isolate","chromosome_median_depth","chromosome_median_non_zero_depth")))
+gene_position_data$positional_chromosome_median_normalized_depth <- gene_position_data$Total_Depth / gene_position_data$chromosome_median_depth
+gene_position_data$positional_chromosome_median_non_zero_normalized_depth <- gene_position_data$Total_Depth / gene_position_data$chromosome_median_non_zero_depth
+
+saveRDS(gene_position_data,"./data/PathogenWatch_AMR_coverage/coverage/curated_datasets/Pathogenwatch_gene_coverage_by_position_chromosome_normalized.RDS")
+```
+
+## Gene level
+```{r}
+gene_summary_data <- left_join(gene_summary_statistics %>% select(isolate,reference,reference_location,genotype,median,median_non_zero) %>% rename("loci_median_depth" = "median",
+                                                                                                                                                   "loci_median_non_zero_depth"="median_non_zero"),chromosome_coverage_data %>% select(isolate,median,median_non_zero) %>% `colnames<-`(c("isolate","chromosome_median_depth","chromosome_median_non_zero_depth")))
+
+gene_summary_data$loci_chromosome_median_normalized_depth <- gene_summary_data$loci_median_depth / gene_summary_data$chromosome_median_depth
+gene_summary_data$loci_chromosome_median_non_zero_normalized_depth <- gene_summary_data$loci_median_non_zero_depth / gene_summary_data$chromosome_median_non_zero_depth
+
+saveRDS(gene_summary_data,"./data/PathogenWatch_AMR_coverage/coverage/curated_datasets/Pathogenwatch_gene_coverage_summary_statistics_chromosome_normalized.RDS")
+``` 

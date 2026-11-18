@@ -1,0 +1,232 @@
+---
+title: "results_03_compare_selected_vs_overall_collections"
+author: "Kyle Gontjes & Aryan Singh"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+ 
+```{r environment}
+packages <- c("tidyverse")
+invisible(lapply(packages, library, character.only = T, quietly = T))
+
+set.seed(45)
+options(tibble.width = Inf, pillar.sigfig = 6, width = 200)
+
+# Function
+source("./lib/consistent_themes.R")
+source("./lib/processed_data_functions.R")
+source("./scripts/pathogenwatch/01__pathogenwatch_summary_functions.R")
+source("./scripts/PathogenWatch_AMR_coverage/clinical_mutation_functions.R")
+
+# System
+Sys.info()
+sessionInfo()
+```
+
+```{r, data}
+load_processed_data(
+  "./data/pathogenwatch/curated/pathogenwatch_data.RDS",
+  c(
+    "ng_sample_metadata",
+    "ng_meta",
+    "pathogenwatch_isolate_data",
+    "resistance_variables",
+    "mutation_variables",
+    "chosen_genome_ids"
+  )
+)
+load_processed_data(
+  "./data/phylogeny/curated/phylogeny_profile_data.RDS",
+  c("tree", "profiles_350", "ng_STs", "genome_groups")
+)
+```
+
+```{r}
+# Major ST
+major_sts <- genome_groups %>% subset(st_class == "Major ST") %>% .$ST %>% unique
+ 
+
+# Merge data
+overall_data <- pathogenwatch_isolate_data %>%
+  mutate(study = "Overall")
+overall_data$major_ST <- overall_data$sequence_type %in% major_sts
+
+chosen_data <- pathogenwatch_isolate_data %>%
+  filter(is_chosen) %>%
+  mutate(study = "Chosen")
+chosen_data$major_ST <-  chosen_data$sequence_type %in% major_sts
+
+comparison_data <- bind_rows(overall_data, chosen_data)
+```
+
+# Temporal distribution
+```{r}
+paste0("Temporal distribution: ")
+comparison_data$decade_2010 <- comparison_data$collection_decade == 2010
+temporal_comparison <- comparison_data %>%
+  filter(!is.na(collection_decade)) %>%
+  group_by(study) %>%
+  summarise(
+    genomes_with_year = n(),
+    genomes_in_2010s = sum(collection_decade == 2010),
+    percent_in_2010s = 100 * mean(collection_decade == 2010),
+    .groups = "drop"
+  )
+
+temporal_comparison %>% favorite_kable()
+
+paste0("Temporal comparison p-value: ",fisher.test(
+  table(comparison_data$collection_decade, comparison_data$study),
+  simulate.p.value = TRUE
+)$p.value)
+
+paste0("Temporal comparison (2010s) p-value: ",fisher.test(
+  table(comparison_data$decade_2010, comparison_data$study),
+  simulate.p.value = TRUE
+)$p.value)
+```
+
+# Continent differences
+```{r}
+comparison_data$americas <- ifelse(is.na(comparison_data$collection_continent),NA,ifelse(comparison_data$collection_continent=="Americas",T,F))
+continent_comparison <- comparison_data %>%
+  filter(!is.na(collection_continent)) %>%
+  count(study, collection_continent) %>%
+  group_by(study) %>%
+  mutate(
+    total = sum(n),
+    percent = 100 * n / total
+  ) %>%
+  ungroup()
+
+table(comparison_data$collection_continent,comparison_data$study,dnn= c("Collection continent","Study"))
+
+continent_comparison %>% favorite_kable()
+
+paste0("Continent comparison p-value: ",fisher.test(
+  table(comparison_data$collection_continent, comparison_data$study),
+  simulate.p.value = TRUE
+)$p.value)
+
+paste0("Dominant content (Americas) p-value: ",fisher.test(
+  table(comparison_data$americas, comparison_data$study),
+  simulate.p.value = TRUE
+)$p.value)
+```
+
+# Sequence type distribution differences
+```{r}
+sequence_type_comparison <- tibble(
+  global_sequence_types = n_distinct(overall_data$sequence_type, na.rm = TRUE),
+  chosen_sequence_types = n_distinct(chosen_data$sequence_type, na.rm = TRUE)
+) %>%
+  mutate(percent_represented = 100 * chosen_sequence_types / global_sequence_types)
+
+sequence_type_comparison %>% favorite_kable()
+
+# Differences overall distribution 
+paste0("P-value differences across all STs: ",  fisher.test(
+  table(comparison_data$sequence_type, comparison_data$study),
+  simulate.p.value = TRUE
+)$p.value)
+
+# Major ST data
+comparison_data %>% group_by(study) %>% summarise(total_isolates = n(), major_ST_ct = sum(major_ST),major_ST_perc = major_ST_ct / total_isolates*100) 
+
+paste0("P-value differences across major ST vs minor STs: ",  fisher.test(
+  table(comparison_data$major_ST, comparison_data$study),
+  simulate.p.value = TRUE
+)$p.value)
+```
+
+# Resistance distribution
+```{r}
+resistance_distribution <- comparison_data %>%
+  pivot_longer(
+    cols = all_of(resistance_variables),
+    names_to = "antibiotic",
+    values_to = "prediction"
+  ) %>%
+  group_by(antibiotic, study) %>%
+  summarise(
+    nonsusceptible = sum(prediction != "NOT_FOUND"),
+    total = n(),
+    percent = 100 * mean(prediction != "NOT_FOUND"),
+    .groups = "drop"
+  )
+
+resistance_p_values <- map_dfr(
+  resistance_variables,
+  function(antibiotic) {
+    nonsusceptible <- comparison_data[[antibiotic]] != "NOT_FOUND"
+    tibble(
+      antibiotic = antibiotic,
+      fisher_p = fisher.test(
+        table(nonsusceptible, comparison_data$study)
+      )$p.value
+    )
+  }
+)
+
+resistance_comparison <- resistance_distribution %>%
+  pivot_wider(
+    names_from = study,
+    values_from = c(nonsusceptible, total, percent)
+  ) %>%
+  left_join(resistance_p_values, by = "antibiotic") %>%
+  arrange(match(antibiotic, resistance_variables))
+
+resistance_comparison %>% favorite_kable()
+```
+
+# Mutation distribution
+```{r}
+mutation_distribution <- comparison_data %>%
+  pivot_longer(
+    cols = all_of(mutation_variables),
+    names_to = "locus",
+    values_to = "value"
+  ) %>%
+  mutate(present = as.numeric(as.character(value)) > 0) %>%
+  group_by(locus, study) %>%
+  summarise(
+    present = sum(present),
+    total = n(),
+    percent = 100 * mean(present),
+    .groups = "drop"
+  )
+
+mutation_p_values <- map_dfr(
+  mutation_variables,
+  function(locus) {
+    present <- as.numeric(as.character(comparison_data[[locus]])) > 0
+    tibble(
+      locus = locus,
+      fisher_p = fisher.test(
+        table(present, comparison_data$study)
+      )$p.value
+    )
+  }
+)
+
+mutation_comparison <- mutation_distribution %>%
+  pivot_wider(
+    names_from = study,
+    values_from = c(present, total, percent)
+  ) %>%
+  left_join(mutation_p_values, by = "locus") %>%
+  arrange(fisher_p)
+
+mutation_comparison %>% favorite_kable()
+```
+ 

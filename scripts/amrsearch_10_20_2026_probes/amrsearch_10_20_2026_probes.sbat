@@ -1,0 +1,41 @@
+#!/bin/bash
+#SBATCH --job-name=amrsearch_10_20_2026_probes
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=5G
+#SBATCH --time=0:30:00
+#SBATCH --account=esnitkin1
+#SBATCH --output=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/amrsearch_10_20_2026_probes/amrsearch_10_20_2026_probes_%j.out
+#SBATCH --error=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/amrsearch_10_20_2026_probes/amrsearch_10_20_2026_probes_%j.err
+
+set -euo pipefail
+
+module load mamba
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate amrsearch
+
+project=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms
+AMRSEARCH_JAR="$project/containers/amr-search/build/paarsnp.jar"
+AMRSEARCH_DB="$project/containers/amr-search/build/databases"
+SPECIES=485
+destination="$project/data/amrsearch_10_20_2026_probes"
+
+mkdir -p "$destination"
+LINK=
+trap 'if [[ -n "$LINK" ]]; then rm -f "$LINK"; fi' EXIT
+
+for i in "$project"/data/NG_probe/spades/bowtie2/*/*_contigs_l1000.fasta
+do
+    echo "$i"
+    SAMPLE=$(basename "$i" _contigs_l1000.fasta)
+    [[ -s "$i" ]] || { echo "Missing or empty assembly: $i" >&2; exit 1; }
+    [[ ! -e "$destination/$SAMPLE.jsn" ]] || { echo "Result already exists: $SAMPLE" >&2; exit 1; }
+    LINK="$destination/$SAMPLE.fasta"
+    ln -s "$i" "$LINK"
+    java -jar "$AMRSEARCH_JAR" -i "$LINK" -s "$SPECIES" -d "$AMRSEARCH_DB"
+    jq -e . "$destination/${SAMPLE}_paarsnp.jsn" > /dev/null
+    rm -f "$LINK"
+    LINK=
+    mv "$destination/${SAMPLE}_paarsnp.jsn" "$destination/$SAMPLE.jsn"
+done
+
+bash -e "$project/scripts/amrsearch_clinical/make_master_amrsearch_results_file.sh" "$destination"

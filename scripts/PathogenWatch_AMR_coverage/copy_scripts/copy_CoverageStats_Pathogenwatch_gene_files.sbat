@@ -1,0 +1,27 @@
+#!/bin/sh
+# Job name
+#SBATCH --job-name=copy_coverage_stats
+# User info
+#SBATCH --mail-user=kgontjes@umich.edu
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --export=ALL
+#SBATCH --partition=standard
+#SBATCH --account=esnitkin1 
+#SBATCH --output=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/PathogenWatch_AMR_Coverage/copy_files/copy_CoverageStats_AMR_PathogenWatch_gene_files.out
+#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=30g --time=00:30:00
+
+# Results
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/coverage/gene_coverage
+rsync -av --relative \
+  /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/results/./CoverageStats_NG_pilot_PathogenWatch_gene_*/*/gatk/ \
+  .
+  
+# Scripts
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/PathogenWatch_AMR_coverage/
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/config/CoverageStats_NG_pilot_PathogenWatch_gene_*yaml CoverageStats_configs 
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/CoverageStats_NG_pilot_PathogenWatch_gene_*sbat CoverageStats_jobs  
+cp /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/run_Coverage_stats_pilot_PathogenWatch_gene_jobs.sh CoverageStats_sbatch_loop
+
+# Logs
+cd /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/PathogenWatch_AMR_Coverage/CoverageStats_runs
+cp -r /scratch/kgontjes_root/kgontjes0/kgontjes/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/logs/CoverageStats_NG_pilot_PathogenWatch_gene_*/ . 

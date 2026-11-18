@@ -1,0 +1,15 @@
+#!/bin/sh
+# Job name
+#SBATCH --job-name=cognac
+# User info
+#SBATCH --mail-user=kgontjes@umich.edu
+#SBATCH --mail-type=BEGIN,END
+#SBATCH --export=ALL
+#SBATCH --partition=largemem
+#SBATCH --account=esnitkin1 
+#SBATCH --nodes=1  --ntasks=1 --cpus-per-task=7 --mem=400g --time=240:00:00
+#SBATCH --output=cognac_slurm.out
+
+R CMD BATCH --no-restore --no-save --quiet /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/scripts/representative_isolates/02__cognac/02__cognac.R  /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2024_NG_enrichment_probe_creation/2024-12-17_cognac/R/cognac.out
+
+

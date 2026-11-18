@@ -1,0 +1,125 @@
+---
+title: "Supplemental Figure 1: Threshold impact figure"
+format:
+  html:
+    embed-resources: true
+    code-fold: false
+execute:
+  warning: true
+  message: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "hues", "ggtext")
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+```
+
+# data
+
+```{r}
+source("./lib/processed_data_functions.R")
+load_processed_data(
+  "./data/phylogeny/curated/threshold_profile_data.RDS",
+  c(
+    "threshold_group_counts",
+    "threshold_group_sizes", "threshold_group_size_medians"
+  )
+)
+```
+
+# generate profile ct data
+
+```{r}
+stats_long <- threshold_group_counts
+```
+
+# generate profile size data
+
+```{r} 
+profile_cluster_df <- threshold_group_sizes
+median_df <- threshold_group_size_medians
+```
+
+# plots
+
+```{r} 
+# line plot 1 
+stats_long$category <- ifelse(stats_long$metric %in% c("total_cluster_singleton_ct","profile_groups"),"Groups",
+                              ifelse(stats_long$metric %in% c("no_cluster","profile_clusters"),"Clusters",
+                                     ifelse(stats_long$metric %in% c("not_in_cluster_ct","profile_singletons"),"Singletons",NA)))
+stats_long$type <- ifelse(stats_long$metric %in% c("total_cluster_singleton_ct","no_cluster","not_in_cluster_ct"),"AA-based clustering","AA+Trait-based clustering")
+stats_long$category <- factor(stats_long$category,levels = c("Groups","Clusters","Singletons"))
+
+lp1 <- ggplot(stats_long, aes(x = threshold, y = count, colour = type)) +
+  geom_line(size = 1.75) +
+  scale_y_log10() +  scale_color_manual(values = c("red", "blue"),name = "") +
+ geom_vline(xintercept=350, linetype="dashed", color = "red") + 
+  labs(x = "Amino acid (AA) distance threshold", y = "Count") +
+  theme_bw_me_large + theme(
+  axis.text.x = element_text(size = 12, color = "black"),
+  axis.text.y = element_text(size = 12, color = "black"),
+  axis.title.x = element_text(size = 14, color = "black"),
+  strip.text = element_text(size = 12, color = "black"),
+  axis.title.y = element_text(size = 14, color = "black"),
+  legend.title = element_text(size = 14, color = "black"),
+  legend.text = element_text(size = 12, color = "black")
+) +  scale_x_continuous(breaks = c(25,250,500,1000,1500),limits = c(20,1550))  + facet_grid(~category)
+
+lp1
+```
+
+
+# Boxplot size
+
+```{r}
+B <- ggplot(data = profile_cluster_df, aes(x = factor(threshold), y = size, fill = type)) +
+    geom_boxplot(aes(group = interaction(threshold, type)),outlier.size = 0.5) +
+    theme_bw_me_large +
+    geom_line(data = median_df, aes(x = factor(threshold), y = median_size, color = type, group = type), linewidth = 1.75) +
+    xlab("Amino acid (AA) distance threshold") +
+    ylab("Group size") +
+    scale_x_discrete(breaks = c(25, 250, 500, 1000, 1500),expand = expansion(add =2 )) +
+    scale_y_log10() +
+    scale_fill_manual(values = c("red", "blue"), name = "") +
+    scale_color_manual(values = c("red", "blue"), name = "") +
+    theme(legend.position = 'none',
+        axis.text.x  = element_text(size = 12, color = "black"),
+        axis.text.y  = element_text(size = 12, color = "black"),
+        axis.title.x = element_text(size = 14, color = "black"),
+        axis.title.y = element_text(size = 14, color = "black"),
+        legend.title = element_text(size = 14, color = "black"),
+        legend.text  = element_text(size = 12, color = "black")
+    ) + facet_grid(~type) + geom_hline(yintercept = 0)
+
+B
+```
+
+```{r,fig.width=8,fig.height=8}
+figure <- cowplot::plot_grid(lp1  + theme(legend.position = 'none'), B, ncol=1,labels = "AUTO",rel_heights = c(0.75,1))
+figure
+```
+
+```{r}
+ggsave(filename = "./figures/s_figure_1_group_statistics.png", plot=figure, dpi=600, width = 8, height=8, bg='white')
+``` 

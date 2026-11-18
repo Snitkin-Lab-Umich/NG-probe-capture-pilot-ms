@@ -1,0 +1,105 @@
+---
+title: "Results Section 2"
+author: "Kyle Gontjes & Aryan Singh"
+date: "`r Sys.Date()`"
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+#knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+```{r environment}
+packages <- c("tidyverse")
+invisible(lapply(packages, library, character.only = T, quietly = T))
+
+set.seed(45)
+options(tibble.width = Inf, pillar.sigfig = 6, width = 200)
+
+# Function
+source("./lib/consistent_themes.R")
+source("./lib/processed_data_functions.R")
+source("./scripts/pathogenwatch/01__pathogenwatch_summary_functions.R")
+source("./scripts/PathogenWatch_AMR_coverage/clinical_mutation_functions.R")
+
+# System
+Sys.info()
+sessionInfo()
+```
+
+```{r, data}
+load_processed_data(
+  "./data/phylogeny/curated/phylogeny_profile_data.RDS",
+  "profile_assignments"
+)
+
+load_processed_data(
+  "./data/phylogeny/curated/threshold_profile_data.RDS",
+  "threshold_profiles"
+)
+```
+
+# Generation of representative threshold data
+
+```{r}
+threshold_cluster_summary <- threshold_profiles %>%
+  mutate(across(-genome_id, as.character)) %>%
+  pivot_longer(
+    cols = -genome_id,
+    names_to = "threshold",
+    values_to = "profile"
+  ) %>%
+  mutate(
+    threshold = as.integer(threshold),
+    aa_cluster = sub("[.].*$", "", profile)
+  ) %>%
+  count(threshold, aa_cluster, name = "cluster_size") %>%
+  group_by(threshold) %>%
+  summarise(
+    multi_genome_clusters = sum(cluster_size > 1),
+    genomes_in_multi_genome_clusters = sum(cluster_size[cluster_size > 1]),
+    singleton_groups = sum(cluster_size == 1),
+    total_aa_groups = n(),
+    .groups = "drop"
+  )
+
+aa_group_sizes <- profile_assignments %>%
+  count(aa_cluster, name = "group_size") %>%
+  transmute(grouping = "350-AA groups", group_size)
+
+partitioned_group_sizes <- profile_assignments %>%
+  count(profile, name = "group_size") %>%
+  transmute(grouping = "Genotype- and resistance-partitioned groups", group_size)
+
+group_size_summary <- bind_rows(
+  aa_group_sizes,
+  partitioned_group_sizes
+) %>%
+  group_by(grouping) %>%
+  summarise(
+    groups = n(),
+    singleton_groups = sum(group_size == 1),
+    multi_genome_groups = sum(group_size > 1),
+    singleton_isolates = sum(group_size[group_size == 1]),
+    multi_genome_isolates = sum(group_size[group_size > 1]),
+    median_size = median(group_size),
+    size_q1 = unname(quantile(group_size, 0.25)),
+    size_q3 = unname(quantile(group_size, 0.75)),
+    maximum_size = max(group_size),
+    .groups = "drop"
+  )
+
+paste0("Number of genomes assigned to amino acid clusters: ",nrow(profile_assignments))
+
+paste0("First AA threshold where every group is in a multi-genome cluster: ")
+threshold_cluster_summary %>% filter(singleton_groups == 0) %>% slice_min(threshold, n = 1) %>% favorite_kable()
+
+paste0("AA-based clustering data at 350 AA threshold")
+group_size_summary %>% favorite_kable()
+```

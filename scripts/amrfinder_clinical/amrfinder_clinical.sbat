@@ -1,0 +1,21 @@
+#!/bin/bash
+#SBATCH --job-name=amrfinder_pilot_study 
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=5G
+#SBATCH --time=0:30:00
+#SBATCH --account=esnitkin1
+#SBATCH --output=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/amrfinder_clinical/amrfinder_clinical_%A_%a.out
+#SBATCH --error=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/slurm_out/amrfinder_clinical/amrfinder_clinical_%A_%a.err
+
+set -euo pipefail
+
+SAMPLE_LIST=$(ls /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/2025-08-25_batch1_NG-probe/spades/bowtie2 -D | sort)
+destination=/nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/amrfinder_clinical  
+
+for i in /nfs/turbo/umms-esnitkin/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/2025-08-25_batch1_NG-probe/spades/bowtie2/*/*_contigs_l1000.fasta
+do
+    echo "$i"
+    SAMPLE=$(basename "$i" _contigs_l1000.fasta)
+    OUTFILE="${destination}/${SAMPLE}.tsv"
+    amrfinder -n "$i" --plus -o "$OUTFILE" --organism Neisseria_gonorrhoeae --threads 4
+done

@@ -1,0 +1,71 @@
+---
+title: "CoverageStats setup using PathogenWatch individual gene data"
+author: "Kyle Gontjes"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+#knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ComplexHeatmap", "ggtext", "cowplot", "grid",'toml') 
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo() 
+```
+
+# Load data
+```{r}
+files_of_interest <- list.files("./data/PathogenWatch_AMR_coverage/database/gene_references/",pattern = ".fasta$") %>% gsub("\\.fasta","",.)
+```
+
+# Config file edit
+```{r}
+model_config <- readLines("~/Desktop/gl_scratch_kg/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/config/CoverageStats_NG_pilot_PathogenWatch_gene_model.yaml")
+
+lapply(files_of_interest,FUN=function(x){
+  cat(x)
+  edited_config <- model_config
+  edited_config <- edited_config %>% gsub("model",x,.)
+  writeLines(text = edited_config,con = paste0("~/Desktop/gl_scratch_kg/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/config/CoverageStats_NG_pilot_PathogenWatch_gene_",x,".yaml"))
+})
+```
+
+
+# Sbat file edit
+```{r}
+model_sbat <- readLines("~/Desktop/gl_scratch_kg/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/CoverageStats_NG_pilot_PathogenWatch_gene_model.sbat")
+
+lapply(files_of_interest,FUN=function(x){
+  cat(x)
+  edited_sbat <- model_sbat
+  edited_sbat <- edited_sbat %>% gsub("model",x,.)
+  writeLines(text = edited_sbat,con = paste0("~/Desktop/gl_scratch_kg/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/CoverageStats_NG_pilot_PathogenWatch_gene_",x,".sbat"))
+})
+```
+
+# Run sbat script
+```{r}
+sbat_functions <- lapply(files_of_interest,FUN=function(x){
+  paste0("sbatch CoverageStats_NG_pilot_PathogenWatch_gene_",x,".sbat")
+}) %>% unlist
+
+commands <- c("#!/bin/sh",sbat_functions)
+
+writeLines(commands,"~/Desktop/gl_scratch_kg/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/data/PathogenWatch_AMR_coverage/CoverageStats/run_Coverage_stats_pilot_PathogenWatch_gene_jobs.sh")
+```
+ 

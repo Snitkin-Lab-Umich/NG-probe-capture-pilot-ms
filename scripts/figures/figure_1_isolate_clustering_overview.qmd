@@ -1,0 +1,1295 @@
+---
+title: "Figure 1"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+opts_knit$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+opts_chunk$set(echo = T, warning = FALSE, message = FALSE, error = FALSE, comment = NA)
+#knitr::opts_knit$set(root.dir = "~/Desktop/gl_nfs/Project_NG_surveillance/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+knitr::opts_knit$set(root.dir = "~/Desktop/ng_mount/Analysis/2025_NG_pipeline_testing/NG_probe_capture_ms/")
+```
+
+# Environment
+
+```{r}
+# Packages
+packages <- c("tidyverse", "ape", "ggtree", "ggalluvial", "cowplot", "scales", "ggtext")
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE, quietly = TRUE))
+
+# Print environment
+set.seed(45)
+Sys.info()
+sessionInfo()
+
+# Themes
+source("./lib/consistent_themes.R")
+
+figure_parts_dir <- file.path("figures/figure_parts")
+dir.create(figure_parts_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+# Data
+
+```{r data}
+source("./lib/processed_data_functions.R")
+load_processed_data(
+  "./data/phylogeny/curated/phylogeny_profile_data.RDS",
+  c("tree", "profiles_350", "ng_STs", "genome_groups")
+)
+```
+
+# Figure 1B
+
+```{r figure-1b}
+cluster_sizes <- genome_groups %>%
+  count(aa_cluster, name = "cluster_size")
+
+profile_sizes <- genome_groups %>%
+  count(profile, name = "profile_size")
+
+AA_based_cluster_isolate_count <- sum(cluster_sizes$cluster_size %>% subset(.>1))
+profile_based_cluster_isolate_count <- sum(profile_sizes$profile_size %>% subset(.>1))
+
+multi_cluster_count <- sum(cluster_sizes$cluster_size > 1L)
+singleton_count <- n_distinct(genome_groups$aa_cluster)
+profile_group_count <- n_distinct(genome_groups$profile)
+cluster_profile_count <- sum(profile_sizes$profile_size > 1L)
+ics_profile_count <- profile_group_count - cluster_profile_count - singleton_count
+
+workflow_stage_levels <- c("Genomes", "350-AA clusters", "Profiles")
+workflow_stratum_levels <- c(
+  "Singleton",
+  "Outliers",
+  "Cluster",
+  "Clusters",
+  "All genomes"
+)
+workflow_display_total <- 3257.4 * 1.25 - 500
+workflow_stage2_total <- multi_cluster_count + singleton_count
+workflow_cluster_share <- 0.95
+workflow_singleton_share <- 0.05
+workflow_stage2_cluster <- multi_cluster_count
+workflow_stage2_singleton <- singleton_count
+
+workflow_stratum_labels <- c(
+  "Singletons",
+  "Outliers",      
+  "Clusters",
+  "Profiles (n>1)",   
+  "All genomes"
+)
+workflow_stratum_counts <- c(
+  singleton_count,
+  ics_profile_count,
+  multi_cluster_count,
+  cluster_profile_count,
+  nrow(genome_groups)
+)
+
+workflow_nodes <- tribble(
+  ~stage, ~stratum, ~value,
+  "Genomes",         "All genomes", workflow_display_total,
+  "350-AA clusters", "Cluster",     workflow_stage2_cluster,
+  "350-AA clusters", "Singleton",   workflow_stage2_singleton,
+  "Profiles",        "Clusters",    cluster_profile_count,
+  "Profiles",        "Outliers",     ics_profile_count,
+  "Profiles",        "Singleton",   singleton_count
+) %>%
+  mutate(
+    stage   = factor(stage,   levels = workflow_stage_levels),
+    stratum = factor(stratum, levels = workflow_stratum_levels)
+  )
+
+workflow_flow_12 <- bind_rows(
+  tibble(
+    alluvium = c("Cluster", "Singleton"),
+    stage = "Genomes",
+    stratum = "All genomes",
+    value = workflow_display_total *
+      c(workflow_cluster_share, workflow_singleton_share)
+  ),
+  tibble(
+    alluvium = c("Cluster", "Singleton"),
+    stage = "350-AA clusters",
+    stratum = c("Cluster", "Singleton"),
+    value = c(workflow_stage2_cluster, workflow_stage2_singleton)
+  )
+) %>%
+  mutate(
+    stage = factor(stage, levels = workflow_stage_levels),
+    stratum = factor(stratum, levels = workflow_stratum_levels)
+  )
+workflow_flow_23 <- bind_rows(
+  tibble(
+    alluvium = c("Cluster", "Outliers", "Singleton"),
+    stage    = "350-AA clusters",
+    stratum  = c("Cluster", "Cluster", "Singleton"),
+    value    = c(
+      workflow_stage2_cluster * cluster_profile_count /
+        (cluster_profile_count + ics_profile_count),
+      workflow_stage2_cluster * ics_profile_count /
+        (cluster_profile_count + ics_profile_count),
+      workflow_stage2_singleton
+    )
+  ),
+  tibble(
+    alluvium = c("Cluster", "Outliers", "Singleton"),
+    stage    = "Profiles",
+    stratum  = c("Clusters", "Outliers", "Singleton"),
+    value    = c(cluster_profile_count, ics_profile_count, singleton_count)
+  )
+) %>%
+  mutate(
+    stage   = factor(stage,   levels = workflow_stage_levels),
+    stratum = factor(stratum, levels = workflow_stratum_levels)
+  )
+
+if (
+  multi_cluster_count != 823L ||
+    singleton_count != 1261L ||
+    profile_group_count != 2877L ||
+    cluster_profile_count != 1482L ||
+    ics_profile_count != 134L
+) {
+  stop("Cluster and profile workflow counts do not reconcile")
+}
+
+workflow_colors <- c(
+  "All genomes" = "#636363",
+  "Cluster"     = "#2166AC",
+  "Clusters"    = "#2166AC",   
+  "Singleton"   = "#B2182B",
+  "Outliers"     = "#FC8D8D"    
+)
+
+p1B <- ggplot() +
+    geom_alluvium(
+        data = workflow_flow_12,
+        aes(
+            x = stage,
+            stratum = stratum,
+            alluvium = alluvium,
+            y = value,
+            fill = alluvium
+        ),
+        width = 0.66,
+        alpha = 0.62,
+        color = NA
+    ) +
+    geom_alluvium(
+        data = workflow_flow_23,
+        aes(
+            x = stage,
+            stratum = stratum,
+            alluvium = alluvium,
+            y = value,
+            fill = alluvium
+        ),
+        width = 0.66,
+        alpha = 0.62,
+        color = NA
+    ) +
+    geom_stratum(
+        data = workflow_nodes,
+        aes(
+            x = stage,
+            stratum = stratum,
+            y = value,
+            fill = after_stat(stratum)
+        ),
+        width = 0.66,
+        color = "black",
+        linewidth = 0.35
+    ) +
+    geom_text(
+        data = workflow_nodes %>% filter(stage != "Genomes"),
+        stat = "stratum",
+        aes(
+            x = stage,
+            stratum = stratum,
+            y = value,
+            label = case_when(
+    as.integer(after_stat(stratum)) %in% c(1L, 2L) ~
+        paste0(
+            scales::comma(workflow_stratum_counts[as.integer(after_stat(stratum))]),
+            " ",
+            workflow_stratum_labels[as.integer(after_stat(stratum))]
+        ),
+    as.integer(after_stat(stratum)) == 3L ~
+        paste0(
+            scales::comma(multi_cluster_count), " Clusters",
+            "\n(n = ", scales::comma(AA_based_cluster_isolate_count), ")"
+        ),
+    as.integer(after_stat(stratum)) == 4L ~
+        paste0(
+            scales::comma(cluster_profile_count), " Clusters",
+            "\n(n = ", scales::comma(profile_based_cluster_isolate_count), ")"
+        ),
+    TRUE ~
+        paste0(
+            workflow_stratum_labels[as.integer(after_stat(stratum))],
+            "\n",
+            scales::comma(workflow_stratum_counts[as.integer(after_stat(stratum))])
+        )
+)
+        ), 
+        size = 2.5,
+        lineheight = 0.9,
+        color = "white",
+    ) +
+    annotate(
+        "text",
+        x = 1,
+        y = workflow_display_total / 2,
+        label = paste0(nrow(genome_groups),"\ngenomes"),
+        color = "white",
+        size = 2.5
+    ) +
+    annotate(
+        "text",
+        x = c(2, 3),
+        y = c(workflow_stage2_total + 175, profile_group_count + 175),
+        label = c("AA-based\nclustering", "AA+trait-based\nclustering"),
+        color = "black",
+        size = 3,
+        lineheight = 0.9,
+        fontface = "bold"
+    ) +
+    scale_x_discrete(
+        limits = c("Genomes", "350-AA clusters", "Profiles"),
+        expand = expansion(add = c(0.2, 0.2))
+    ) +
+    scale_y_continuous(
+        expand = expansion(mult = c(0, 0))
+    ) +
+    scale_fill_manual(
+        values = workflow_colors,
+        guide = "none"
+    ) + scale_color_manual(
+        values = c(
+            "All genomes" = "black",
+            "Cluster"     = "white",
+            "Clusters"    = "white",
+            "Singleton"   = "white",
+            "Outliers"     = "black"  
+        ),
+        guide = "none"
+    )  +
+    labs(x = NULL, y = NULL) +
+    theme_void() +
+    theme(
+        legend.position = "none",
+        plot.margin = margin(5, 5, 5, 5)
+    ) +
+    coord_cartesian(
+        ylim = c(0, workflow_display_total * 1.04),
+        clip = "off"
+    )
+```
+
+# Figure 1D
+
+```{r figure-1c}
+ST_size <- ng_STs$ST %>% table %>% as.data.frame %>% `colnames<-`(c("group_id","number_of_genomes")) %>% mutate(group_type = "Sequence type")
+
+group_sizes <- bind_rows(
+  cluster_sizes %>%
+    transmute(
+      group_type = "AA-based\nclustering",
+      group_id = aa_cluster,
+      number_of_genomes = cluster_size
+    ),
+  profile_sizes %>%
+    transmute(
+      group_type = "AA+trait-based\nclustering",
+      group_id = profile,
+      number_of_genomes = profile_size
+    )
+) %>% bind_rows(ST_size) %>% 
+  mutate(group_type = factor(group_type, levels = c("Sequence type","AA-based\nclustering", "AA+trait-based\nclustering")))
+
+group_size_bin_levels <- c(
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6-10",
+  "11-15",
+  "16-20",
+  "21-25",
+  "26-50",
+  "51-75",
+  "76-100",
+  "101-250",
+  "251-500",
+  "501-750",
+  "751-1000",
+  ">1000"
+)
+
+group_size_binned <- group_sizes %>%
+  mutate(
+    size_bin = cut(
+      number_of_genomes,
+      breaks = c(
+        0, 1, 2, 3, 4, 5,
+        10, 15, 20, 25,
+        50, 75, 100,
+        250, 500, 750, 1000,
+        Inf
+      ),
+      labels = group_size_bin_levels,
+      right = TRUE
+    )
+  ) %>%
+  count(group_type, size_bin, .drop = FALSE, name = "number_of_groups") %>%
+  group_by(group_type) %>%
+  mutate(proportion = number_of_groups / sum(number_of_groups)) %>%
+  ungroup()
+
+p1C_base <- ggplot(
+  group_size_binned,
+  aes(x=size_bin,y= proportion, fill = group_type)
+) +
+  geom_col(
+    position = position_dodge(width = 0.82),
+    width = 0.76,
+    color = "white",
+    linewidth = 0.25
+  ) +
+  scale_fill_manual(
+    values = c("Sequence type" ="brown","AA-based\nclustering" = "darkgray", "AA+trait-based\nclustering" = "black"),
+    name = NULL
+  ) +
+  guides(
+    fill = guide_legend(
+      nrow = 1,
+      byrow = TRUE,
+      keywidth = grid::unit(0.30, "cm"),
+      keyheight = grid::unit(0.30, "cm")
+    )
+  ) +
+  labs(x = "Genomes per group", y = "Proportion of groups") +
+  theme_figure +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 7.5),
+    panel.grid.major.x = element_blank(),
+    legend.position = c(0.98, 0.98),
+    legend.justification = c(1, 1),
+    legend.direction = "horizontal",
+    legend.background = element_rect(
+      fill = alpha("white", 0.88),
+      color = "grey70",
+      linewidth = 0.25
+    ),
+    legend.text = element_text(size = 7),
+    legend.margin = margin(2, 3, 2, 3)
+  )
+
+p1C_upper <- p1C_base +
+  scale_y_continuous(
+    breaks = c(0.30, 0.40, 0.50),
+    labels = label_percent(accuracy = 1),
+    expand = expansion(mult = c(0, 0))
+  ) +
+  labs(x = NULL, y = NULL) +
+  theme(
+    panel.border = element_blank(),
+    axis.line.y = element_line(color = "black"),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    plot.margin = margin(5, 5, 0, 5)
+  ) +
+  coord_cartesian(ylim = c(0.30, 0.52), clip = "on")
+
+p1C_lower <- p1C_base +
+  scale_y_continuous(
+    breaks = c(0, 0.05, 0.10, 0.15),
+    labels = label_percent(accuracy = 1),
+    expand = expansion(mult = c(0, 0))
+  ) +
+  theme(
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    legend.position = "none",
+    plot.margin = margin(0, 5, 5, 5)
+  ) +
+  coord_cartesian(ylim = c(0, 0.15), clip = "on")
+
+p1C_core <- plot_grid(
+  p1C_upper,
+  NULL,
+  p1C_lower,
+  ncol = 1,
+  rel_heights = c(0.6, 0.108, 1.7),
+  align = "v",
+  axis = "lr"
+)
+
+p1C <- ggdraw() +
+  draw_plot(
+    p1C_core,
+    x = 0.045,
+    y = 0,
+    width = 0.955,
+    height = 1
+  ) 
+```
+
+# Figure #
+
+```{r figure-1d}
+st_representation <- genome_groups %>%
+  count(ST, st_class, name = "original_n") %>%
+  left_join(
+    genome_groups %>%
+      filter(selected) %>%
+      count(ST, name = "selected_n"),
+    by = "ST"
+  ) %>%
+  mutate(
+    selected_n = replace_na(selected_n, 0L),
+    original_proportion = original_n / sum(original_n),
+    selected_proportion = selected_n / sum(selected_n),
+    change_percentage_points = 100 * (selected_proportion - original_proportion)
+  )
+
+st_class_colors <- c("Major ST" = "#D73027", "Minor ST" = "#2166AC")
+
+ST_scale <-  scale_fill_manual(
+    values = st_class_colors,
+    breaks = c("Major ST", "Minor ST"),
+    labels = c("Major (n >= 100)","Minor"),
+    name = "Sequence type category"
+  ) 
+
+p1D_base <- ggplot(
+  st_representation %>%
+    mutate(
+      st_class = factor(st_class, levels = c("Major ST", "Minor ST"))
+    ),
+  aes(change_percentage_points, fill = st_class)
+) +
+  geom_histogram(
+    bins = 40,
+    position = position_stack(reverse = TRUE),
+    color = "white",
+    linewidth = 0.18
+  ) + ST_scale +
+  scale_x_continuous(labels = label_number(accuracy = 1, suffix = "%")) +
+  labs(
+    x = "Change in sequence type representation\n(selected - overall)",
+    y = "Sequence types"
+  ) +
+  theme_figure +
+  theme(legend.position = "bottom")
+
+st_histogram_max <- max(ggplot_build(p1D_base)$data[[1]]$count)
+st_histogram_upper_min <- 100
+
+p1D_legend <- cowplot::get_legend(
+  p1D_base +
+    guides(
+      fill = guide_legend(
+        nrow = 1,
+        byrow = TRUE,
+        keywidth = grid::unit(0.30, "cm"),
+        keyheight = grid::unit(0.30, "cm")
+      )
+    ) +
+    theme(
+      legend.position = "bottom",
+      legend.text = element_text(size = 9),
+      legend.spacing.x = grid::unit(2, "pt"),
+      legend.margin = margin(0, 0, 0, 0)
+    )
+)
+
+p1D_upper <- p1D_base +
+  scale_y_continuous(
+    breaks = c(
+      st_histogram_upper_min,
+      ceiling(st_histogram_max / 50) * 50
+    ),
+    labels = comma
+  ) +
+  labs(x = NULL, y = NULL) +
+  theme(
+    panel.border = element_blank(),
+    axis.line.y = element_line(color = "black"),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "none",
+    plot.margin = margin(5, 5, 0, 5)
+  ) +
+  coord_cartesian(
+    ylim = c(st_histogram_upper_min, st_histogram_max * 1.05),
+    clip = "on"
+  )
+
+p1D_lower <- p1D_base +
+  scale_y_continuous(
+    breaks = c(0, 5, 10, 15, 20, 25),
+    labels = comma,
+    expand = expansion(mult = c(0, 0))
+  ) +
+  theme(
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.title.x = element_text(size = 11),
+    axis.title.y = element_text(size = 11, margin = margin(r = 10)),
+    legend.position = "none",
+    plot.margin = margin(0, 5, 5, 5)
+  ) +
+  coord_cartesian(ylim = c(0, 25), clip = "on")
+
+p1D <- plot_grid(
+  p1D_upper,
+  NULL,
+  p1D_lower,
+  ncol = 1,
+  rel_heights = c(0.15, 0.07, 1),
+  align = "v",
+  axis = "lr"
+) 
+```
+
+# Figure 1E
+
+```{r figure-1e}
+st_profile_summary <- genome_groups %>%
+  mutate(
+    st_class = factor(st_class, levels = c("Major ST", "Minor ST"))
+  ) %>%
+  group_by(ST, st_class) %>%
+  summarise(
+    unique_profiles = n_distinct(profile),
+    .groups = "drop"
+  )
+
+p1E_base <- ggplot(
+  st_profile_summary,
+  aes(unique_profiles, fill = st_class)
+) +
+  geom_histogram(
+    binwidth = 5,
+    boundary = 0,
+    closed = "right",
+    position = position_stack(reverse = TRUE),
+    color = "white",
+    linewidth = 0.12
+  ) + ST_scale +
+  scale_x_continuous(
+    breaks = seq(0, 165, by = 15),
+    labels = seq(0, 165, by = 15)
+  ) +
+  labs(
+    x = "Unique trait-based partitions\n ",
+    y = "Sequence types"
+  ) +
+  theme_figure +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5, vjust = 0.5, size = 9),
+    legend.position = "none"
+  )
+
+st_profile_histogram_max <- max(ggplot_build(p1E_base)$data[[1]]$count)
+st_profile_histogram_upper_min <- 850
+
+p1E_upper <- p1E_base +
+  scale_y_continuous(
+    breaks = c(
+      st_profile_histogram_upper_min,
+      ceiling(st_profile_histogram_max / 50) * 50
+    ),
+    labels = comma
+  ) +
+  labs(x = NULL, y = NULL) +
+  theme(
+    panel.border = element_blank(),
+    axis.line.y = element_line(color = "black"),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "none",
+    plot.margin = margin(5, 5, 0, 5)
+  ) +
+  coord_cartesian(
+    ylim = c(
+      st_profile_histogram_upper_min,
+      st_profile_histogram_max * 1.05
+    ),
+    clip = "on"
+  )
+
+p1E_lower <- p1E_base +
+  scale_y_continuous(
+    breaks = c(0, 10, 20, 30, 40, 50),
+    labels = comma,
+    expand = expansion(mult = c(0, 0))
+  ) +
+  theme(
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.title.y = element_text(size = 11, margin = margin(r = 10)),
+    plot.margin = margin(0, 5, 5, 5)
+  ) +
+  coord_cartesian(ylim = c(0, 50), clip = "on")
+
+p1E <- plot_grid(
+  p1E_upper,
+  NULL,
+  p1E_lower,
+  ncol = 1,
+  rel_heights = c(0.22, 0.07, 1),
+  align = "v",
+  axis = "lr"
+) 
+```
+
+# Figure 1G
+
+```{r figure-1G}
+phenotype_vars <- names(profiles_350)[1:8]
+genotype_vars <- names(profiles_350)[9:30]
+
+phenotype_change <- map_dfr(
+  phenotype_vars,
+  function(variable) {
+    present <- profiles_350[[variable]] == "RESISTANT"
+    tibble(
+      trait = paste(variable, "resistant"),
+      trait_type = "Phenotype",
+      original_proportion = weighted.mean(present, profiles_350$count),
+      selected_proportion = mean(present)
+    )
+  }
+)
+
+genotype_change <- map_dfr(
+  genotype_vars,
+  function(variable) {
+    present <- as.integer(as.character(profiles_350[[variable]]))
+    tibble(
+      trait = str_replace_all(variable, "_", " "),
+      trait_type = "Genotype",
+      original_proportion = weighted.mean(present, profiles_350$count),
+      selected_proportion = mean(present)
+    )
+  }
+) %>% mutate(trait = paste0("<i>",trait,"</i>") %>% gsub("<i>blaTEM</i>","<i>bla</i><sub>TEM</sub>",.))
+
+trait_representation <- bind_rows(phenotype_change, genotype_change) %>%
+  mutate(
+    change_percentage_points = 100 * (selected_proportion - original_proportion),
+    trait_type = factor(trait_type, levels = c("Phenotype", "Genotype")),
+    trait = fct_reorder(trait, change_percentage_points)
+  ) 
+
+
+trait_type_colors <- c("Phenotype" = "#D95F02", "Genotype" = "#2166AC")
+
+p1F <- ggplot(
+  trait_representation,
+  aes(change_percentage_points, trait,color=trait_type)
+) +
+  geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.4) +
+  geom_segment(
+    aes(x = 0, xend = change_percentage_points, yend = trait),
+    color = "grey70",
+    linewidth = 0.45
+  ) +
+  geom_point(size = 2) +
+  facet_grid(
+    rows = vars(trait_type),
+    scales = "free_y",
+    space = "free_y",
+    labeller = labeller(
+      trait_type = c(
+        "Phenotype" = "Resistance",
+        "Genotype" = "Genotype"
+      )
+    )
+  )  + 
+  scale_color_manual(values = trait_type_colors, guide = "none") + 
+  scale_x_continuous(labels = label_number(accuracy = 1, suffix = "%")) +
+  scale_y_discrete(labels = function(x) sub(" resistant$", "", x)) +
+  labs(
+    x = "Change in representation\n(selected - overall)",
+    y = NULL
+  ) +
+  theme_figure +
+  theme(
+    axis.text.x = element_text(size = 9.5),
+    axis.text.y = element_markdown(size = 6.75),
+    axis.title.x = element_text(size = 11),
+    strip.text.y = element_text(size = 8)
+  )
+```
+
+# Combine and save
+
+```{r combine, fig.width=10, fig.height=12}
+# push B in so its visible plotting width aligns with C
+p1B_display <- ggdraw() +
+  draw_plot(
+    p1B,
+    x = 0.095,
+    y = 0,
+    width = 0.905,
+    height = 1
+  )
+
+figure_1_new_b <- plot_grid(
+  p1B_display,
+  labels = "C",
+  label_size = 14,
+  label_x = 0.01,
+  label_y = 0.99,
+  hjust = 0,
+  vjust = 1
+)
+
+figure_1_new_c <- plot_grid(
+  p1C,
+  labels = "D",
+  label_size = 14,
+  label_x = 0.01,
+  label_y = 0.99,
+  hjust = 0,
+  vjust = 1
+)
+
+figure_1_new_bottom_left <- plot_grid(
+  p1D,
+  p1E,
+  nrow = 1,
+  rel_widths = c(1, 1),
+  labels = c("E", "F"),
+  label_size = 14,
+  label_x = 0.01,
+  label_y = 0.99,
+  hjust = 0,
+  vjust = 1
+)
+
+figure_1_new_f <- plot_grid(
+  p1F,
+  labels = "G",
+  label_size = 14,
+  label_x = 0.01,
+  label_y = 0.99,
+  hjust = 0,
+  vjust = 1
+)
+
+# rasterized from NG_1A_concept_fig.pdf 
+concept_1a_raster <- png::readPNG(file.path(
+  "scripts/figures/NG_1A_concept_fig.png"
+))
+
+figure_1_new_a <- ggdraw() +
+  draw_grob(
+    grid::rasterGrob(concept_1a_raster, interpolate = TRUE),
+    x = 0.025,
+    y = 0.02,
+    width = 0.975,
+    height = 0.975
+  ) +
+  draw_plot_label(
+    "A",
+    x = 0.005,
+    y = 0.99,
+    hjust = 0,
+    vjust = 1,
+    size = 14
+  )
+
+# ranking STs in size range for example that shows multiple 350-AA clusters being partitioned into both singleton and multi-genome profiles of different sizes
+find_profile_example_sts <- function(
+  data,
+  min_genomes = 50,
+  max_genomes = 60
+) {
+  data %>%
+    filter(!is.na(ST)) %>%
+    count(ST, aa_cluster, profile, name = "profile_size") %>%
+    group_by(ST) %>%
+    summarise(
+      n_genomes = sum(profile_size),
+      n_clusters = n_distinct(aa_cluster),
+      n_profiles = n(),
+      singleton_profiles = sum(profile_size == 1),
+      multi_genome_profiles = sum(profile_size > 1),
+      split_clusters = sum(table(aa_cluster) > 1),
+      distinct_profile_sizes = n_distinct(profile_size),
+      max_profile_size = max(profile_size),
+      .groups = "drop"
+    ) %>%
+    filter(
+      between(n_genomes, min_genomes, max_genomes),
+      singleton_profiles > 0,
+      multi_genome_profiles > 0,
+      split_clusters > 0
+    ) %>%
+    arrange(
+      desc(split_clusters),
+      desc(distinct_profile_sizes),
+      desc(n_profiles),
+      abs(n_genomes - mean(c(min_genomes, max_genomes))),
+      ST
+    )
+}
+
+example_st_candidates <- find_profile_example_sts(genome_groups)
+if (nrow(example_st_candidates) == 0) {
+  stop("No ST satisfies the requested example criteria")
+}
+example_st_summary <- slice_head(example_st_candidates, n = 1)
+example_st <- example_st_summary$ST
+
+example_st_data <- genome_groups %>%
+  filter(ST == example_st)
+
+example_st_tree <- keep.tip(tree, example_st_data$genome_id)
+
+example_cluster_lookup <- example_st_data %>%
+  distinct(aa_cluster) %>%
+  arrange(readr::parse_number(aa_cluster), aa_cluster) %>%
+  mutate(cluster_number = row_number())
+
+example_profile_lookup <- example_st_data %>%
+  distinct(aa_cluster, profile) %>%
+  left_join(example_cluster_lookup, by = "aa_cluster") %>%
+  arrange(cluster_number, readr::parse_number(profile), profile) %>%
+  group_by(aa_cluster) %>%
+  mutate(profile_number = row_number()) %>%
+  ungroup() %>%
+  mutate(profile_label = paste0(cluster_number, ".", profile_number))
+
+# Map profile-level resistance calls back to every genome in the example ST
+# Only traits with more than one observed state in this subset are kept
+profile_trait_values <- profiles_350 %>%
+  transmute(
+    profile = as.character(cl_prof_id),
+    across(
+      all_of(phenotype_vars),
+      as.character
+    ),
+    across(
+      all_of(genotype_vars),
+      ~ as.integer(as.character(.x))
+    )
+  )
+
+example_st_plot_data <- example_st_data[
+  match(example_st_tree$tip.label, example_st_data$genome_id),
+] %>%
+  left_join(example_cluster_lookup, by = "aa_cluster") %>%
+  left_join(
+    example_profile_lookup %>%
+      select(aa_cluster, profile, profile_number, profile_label),
+    by = c("aa_cluster", "profile")
+  ) %>%
+  left_join(
+    profile_trait_values,
+    by = "profile"
+  ) %>%
+  mutate(
+    cluster_track = paste0("Cluster ", cluster_number),
+    profile_track = paste0("Profile ", profile_label)
+  )
+
+example_cluster_levels <- paste0(
+  "Cluster ",
+  seq_len(max(example_st_plot_data$cluster_number))
+)
+example_profile_levels <- example_profile_lookup %>%
+  arrange(cluster_number, profile_number) %>%
+  transmute(level = paste0("Profile ", profile_label)) %>%
+  pull(level)
+example_profile_labels <- sub("^Profile ", "", example_profile_levels)
+
+example_variable_phenotypes <- phenotype_vars[
+  vapply(
+    example_st_plot_data[phenotype_vars],
+    function(x) n_distinct(x, na.rm = TRUE) > 1,
+    logical(1)
+  )
+]
+example_variable_genotypes <- genotype_vars[
+  vapply(
+    example_st_plot_data[genotype_vars],
+    function(x) n_distinct(x, na.rm = TRUE) > 1,
+    logical(1)
+  )
+]
+
+example_st_tracks <- example_st_plot_data %>%
+  transmute(
+    Cluster = factor(cluster_track, levels = example_cluster_levels),
+    Profile = factor(profile_track, levels = example_profile_levels)
+  ) %>%
+  as.data.frame()
+
+for (variable in example_variable_phenotypes) {
+  example_st_tracks[[variable]] <- factor(
+    case_when(
+      example_st_plot_data[[variable]] == "RESISTANT" ~ "RESISTANT",
+      example_st_plot_data[[variable]] == "INTERMEDIATE" ~ "INTERMEDIATE",
+      example_st_plot_data[[variable]] %in% c("NOT_FOUND", "SUSCEPTIBLE") ~
+        "NOT_FOUND",
+      TRUE ~ NA_character_
+    ),
+    levels = resistance_levels
+  )
+}
+for (variable in example_variable_genotypes) {
+  example_st_tracks[[variable]] <- factor(
+    if_else(
+      example_st_plot_data[[variable]] == 1,
+      "Genotype present",
+      "Genotype absent",
+      missing = NA_character_
+    ),
+    levels = c("Genotype absent", "Genotype present")
+  )
+}
+rownames(example_st_tracks) <- example_st_plot_data$genome_id
+
+example_st_selection <- example_st_plot_data %>%
+  transmute(
+    genome_id,
+    selected_isolate = selected
+  )
+
+# cluster and profile colors for set example
+example_cluster_colors <- setNames(
+  c(
+    "#FFB300", "#803E75", "#FF6800", "#A6BDD7", "#C10020",
+    "#CEA262", "#817066", "#007D34", "#F6768E", "#00538A",
+    "#FF7A5C", "#53377A", "#FF8E00", "#B32851", "#F4C800",
+    "#7F180D", "#93AA00", "#593315", "#F13A13", "#00A1C2",
+    "#232C16"
+  )[seq_along(example_cluster_levels)],
+  example_cluster_levels
+)
+example_profile_colors <- setNames(
+  c(
+    "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
+    "#8C564B", "#E377C2", "#7F7F7F", "#BCBD22", "#17BECF"
+  )[seq_along(example_profile_levels)],
+  example_profile_levels
+)
+example_track_colors <- c(
+  example_cluster_colors,
+  example_profile_colors,
+  phylogeny_resistance_colors,
+  "Genotype absent" = unname(phylogeny_presence_colors["Absent"]),
+  "Genotype present" = unname(phylogeny_presence_colors["Present"])
+)
+
+p1B_example_tree <- ggtree(
+  example_st_tree,
+  layout = "rectangular",
+  branch.length = "none",
+  linewidth = 0.5
+) %<+%
+  example_st_selection +
+  geom_tippoint(
+    aes(subset = selected_isolate),
+    color = phylogeny_selected_color,
+    size = 2,
+    show.legend = FALSE
+  )
+
+p1B_example_tree <- gheatmap(
+  p1B_example_tree,
+  example_st_tracks,
+  offset = 0.25,
+  width = 0.98,
+  color = NA,
+  colnames = T,colnames_angle = 90,colnames_position = 'top',hjust = 0
+) +
+  scale_fill_manual(values = example_track_colors, na.value = "#D9D9D9") +
+  theme(
+    legend.position = "none",
+    plot.margin = margin(1, 0, 2, 2)
+  ) + ylim(NA,70)
+
+example_track_axis <- attr(p1B_example_tree, "data_axis") %>%
+  mutate(
+    track = as.character(from),
+    y = max(p1B_example_tree$data$y, na.rm = TRUE) + 0.7
+  )
+
+example_identity_track_axis <- example_track_axis %>%
+  filter(track %in% c("Cluster", "Profile")) %>%
+  mutate(track_label = track)
+
+example_resistance_track_axis <- example_track_axis %>%
+  filter(track %in% c(
+    example_variable_phenotypes,
+    example_variable_genotypes
+  )) %>%
+  mutate(
+    track_label = str_replace_all(track, "_", " ")
+  )
+
+example_selected_key_plot <- ggplot(
+  tibble(x = 1, y = 1, key = "Selected isolate"),
+  aes(x, y, color = key)
+) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = c("Selected isolate" = phylogeny_selected_color), name = NULL) +
+  guides(
+    color = guide_legend(
+      title.position = "top",
+      keywidth = grid::unit(0.20, "cm"),
+      keyheight = grid::unit(0.20, "cm")
+    )
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    legend.justification = "left",
+    legend.text = element_text(size = 8),
+    legend.margin = margin(0, 0, 0, 0)
+  )
+
+example_cluster_key_plot <- make_track_legend(
+  levels = example_cluster_levels,
+  colors = example_cluster_colors,
+  labels = seq_along(example_cluster_levels),
+  title = "Cluster",
+  ncol = 3
+) +
+  theme(
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
+example_profile_key_plot <- make_track_legend(
+  levels = example_profile_levels,
+  colors = example_profile_colors,
+  labels = example_profile_labels,
+  title = "Profile",
+  ncol = 3
+) +
+  theme(
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
+example_resistance_key_plot <- make_track_legend(
+  levels = resistance_levels,
+  colors = phylogeny_resistance_colors,
+  labels = resistance_labels,
+  title = "Resistance",
+  ncol = 1
+) +
+  theme(
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
+example_genotype_key_plot <- make_track_legend(
+  levels = c("Genotype present", "Genotype absent"),
+  colors = c(
+    "Genotype present" = unname(phylogeny_presence_colors["Present"]),
+    "Genotype absent" = unname(phylogeny_presence_colors["Absent"])
+  ),
+  labels = c("Present", "Absent"),
+  title = "Genotype",
+  ncol = 1
+) +
+  theme(
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
+example_selected_key <- cowplot::get_legend(example_selected_key_plot)
+example_cluster_key <- cowplot::get_legend(example_cluster_key_plot)
+example_profile_key <- cowplot::get_legend(example_profile_key_plot)
+example_resistance_key <- cowplot::get_legend(example_resistance_key_plot)
+example_genotype_key <- cowplot::get_legend(example_genotype_key_plot)
+
+figure_1_new_example_st <- ggdraw() +
+  draw_plot(
+    p1B_example_tree,
+    x = 0.02,
+    y = 0.00,
+    width = 0.76,
+    height = 1
+  ) +
+  draw_grob(
+    example_cluster_key,
+    x = 0.775,
+    y = 0.65,
+    width = 0.25,
+    height = 0.225,
+    valign = 1
+  ) +
+  draw_grob(
+    example_profile_key,
+    x = 0.775,
+    y = 0.425,
+    width = 0.25,
+    height = 0.225,
+    valign = 1
+  ) +
+  draw_grob(
+    example_resistance_key,
+    x = 0.775,
+    y = 0.225,
+    width = 0.25,
+    height = 0.20,
+    valign = 1
+  ) +
+  draw_grob(
+    example_genotype_key,
+    x = 0.775,
+    y = 0.1,
+    width = 0.225,
+    height = 0.115,
+    valign = 1
+  ) +
+  draw_grob(
+    example_selected_key,
+    x = 0.775,
+    y = 0.025,
+    width = 0.225,
+    height = 0.07,
+    valign = 1
+  ) +
+  draw_label(
+    paste0("Sequence type ", example_st, " (n = ", example_st_summary$n_genomes, ")"),
+    x = 0.05,
+    y = 0.995,
+    hjust = 0,
+    vjust = 1,
+    size = 12
+  ) +
+  draw_plot_label(
+    "B",
+    x = 0.005,
+    y = 0.995,
+    hjust = 0,
+    vjust = 1,
+    size = 14
+  )
+
+major_minor_key_plot <- ggdraw() +
+  draw_grob(
+    p1D_legend,
+    x = 0,
+    y = 0,
+    width = 1,
+    height = 1,
+    valign = 0.5
+  )
+
+ggsave(
+  filename = file.path(figure_parts_dir, "Figure_1_major_minor_ST_key.png"),
+  plot = major_minor_key_plot,
+  width = 2.4,
+  height = 0.38,
+  dpi = 600,
+  bg = "white"
+)
+
+# 4 rows;
+# full width A at native 3:1 aspect ratio;
+# blank B/C; D/G; and E/F
+a_row_height <- 12 / 3
+bc_row_height <- 5.5
+dg_row_height <- 5.5
+ef_row_height <- 3
+major_minor_key_height <- 0.38
+total_height <- a_row_height + bc_row_height + dg_row_height +
+  major_minor_key_height + ef_row_height
+b_panel_height <- bc_row_height * 1.20
+d_panel_height <- dg_row_height - (b_panel_height - bc_row_height)
+
+figure_1_new <- ggdraw(
+  xlim = c(0, 1),
+  ylim = c(0, 1),
+  clip = "on"
+) +
+  draw_plot(
+    figure_1_new_a,
+    x = 0,
+    y = (
+      ef_row_height + major_minor_key_height + dg_row_height + bc_row_height
+    ) / total_height,
+    width = 1,
+    height = a_row_height / total_height
+  ) +
+  draw_plot(
+    figure_1_new_bottom_left,
+    x = 0,
+    y = 0,
+    width = 1,
+    height = ef_row_height / total_height
+  ) +
+  draw_plot(
+    figure_1_new_example_st,
+    x = 0,
+    y = (
+      ef_row_height + major_minor_key_height + d_panel_height
+    ) / total_height,
+    width = 0.625,
+    height = b_panel_height / total_height
+  ) +
+  draw_plot(
+    figure_1_new_b,
+    x = 0.625,
+    y = (
+      ef_row_height + major_minor_key_height + dg_row_height
+    ) / total_height,
+    width = 0.375,
+    height = bc_row_height / total_height
+  ) +
+  draw_plot(
+    figure_1_new_c,
+    x = 0,
+    y = (ef_row_height + major_minor_key_height) / total_height,
+    width = 0.625,
+    height = d_panel_height / total_height
+  ) +
+  draw_plot(
+    figure_1_new_f,
+    x = 0.625,
+    y = (ef_row_height + major_minor_key_height) / total_height,
+    width = 0.375,
+    height = dg_row_height / total_height
+  ) +
+  draw_plot(
+    major_minor_key_plot,
+    x = 0.08,
+    y = ef_row_height / total_height,
+    width = 0.25,
+    height = major_minor_key_height / total_height
+  )
+
+figure_1_new
+
+ggsave(
+  filename = file.path("./figures/figure_1_isolate_clustering_overview.png"),
+  plot = figure_1_new,
+  width = 10,
+  height = total_height,
+  dpi = 600,
+  bg = "white"
+)
+```
