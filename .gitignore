@@ -72,4 +72,11 @@ dhatri_qc_pipeline_results/
 # Slurm output
 slurm_out/
  
+# all weird files
 ._*
+
+# all deprecated folders
+deprecated/
+
+# BUSCO downloads
+busco_downloads/
